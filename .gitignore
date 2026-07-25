@@ -1,0 +1,16 @@
+/build/
+/.cache/
+/.vscode/*.log
+*.o
+*.obj
+*.a
+*.elf
+*.axf
+*.hex
+*.bin
+*.map
+*.d
+*.pyc
+__pycache__/
+*.uvguix.*
+*.user

@@ -1,0 +1,344 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Template: Check Architecture",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/check_template.ps1"
+      ],
+      "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Environment: Doctor (MSPM0G3507 + XDS110)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "Doctor",
+        "-Device",
+        "MSPM0G3507",
+        "-Probe",
+        "XDS110"
+      ],
+      "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Environment: Doctor (MSPM0G3519 + DAPLink)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "Doctor",
+        "-Device",
+        "MSPM0G3519",
+        "-Probe",
+        "DAPLink"
+      ],
+      "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: MSPM0G3507 (Debug)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "Build",
+        "-Device",
+        "MSPM0G3507"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "Build: MSPM0G3519 (Debug)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "Build",
+        "-Device",
+        "MSPM0G3519"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "Build: MSPM0G3507 (Release)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "Build",
+        "-Device",
+        "MSPM0G3507",
+        "-Configuration",
+        "Release"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "Build: MSPM0G3519 (Release)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "Build",
+        "-Device",
+        "MSPM0G3519",
+        "-Configuration",
+        "Release"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "Prepare Debug: MSPM0G3507 (Debug + XDS110)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Environment: Doctor (MSPM0G3507 + XDS110)",
+        "Build: MSPM0G3507 (Debug)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Prepare Debug: MSPM0G3519 (Debug + DAPLink)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Environment: Doctor (MSPM0G3519 + DAPLink)",
+        "Build: MSPM0G3519 (Debug)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Prepare Debug: MSPM0G3507 (Release + XDS110)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Environment: Doctor (MSPM0G3507 + XDS110)",
+        "Build: MSPM0G3507 (Release)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Prepare Debug: MSPM0G3519 (Release + DAPLink)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Environment: Doctor (MSPM0G3519 + DAPLink)",
+        "Build: MSPM0G3519 (Release)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: All MSPM0G35xx",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Template: Check Architecture",
+        "Build: MSPM0G3507 (Debug)",
+        "Build: MSPM0G3519 (Debug)",
+        "Build: MSPM0G3507 (Release)",
+        "Build: MSPM0G3519 (Release)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Flash: MSPM0G3507 via XDS110",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "Flash",
+        "-Device",
+        "MSPM0G3507",
+        "-Probe",
+        "XDS110"
+      ],
+      "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "Flash: MSPM0G3519 via DAPLink",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "Flash",
+        "-Device",
+        "MSPM0G3519",
+        "-Probe",
+        "DAPLink"
+      ],
+      "presentation": {
+        "echo": false,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "SysConfig: MSPM0G3507",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "SysConfig",
+        "-Device",
+        "MSPM0G3507"
+      ],
+      "presentation": {
+        "echo": false,
+        "reveal": "silent",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "SysConfig: MSPM0G3519",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/tools/mspm0.ps1",
+        "-Action",
+        "SysConfig",
+        "-Device",
+        "MSPM0G3519"
+      ],
+      "presentation": {
+        "echo": false,
+        "reveal": "silent",
+        "panel": "shared",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SysConfig: MSPM0G3519 (GUI)",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/tools/mspm0.ps1\" -Action SysConfig -Device MSPM0G3519"
+    },
+    {
+      "name": "SysConfig: MSPM0G3507 (GUI)",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/tools/mspm0.ps1\" -Action SysConfig -Device MSPM0G3507"
+    },
+    {
+      "name": "MSPM0G3519: Debug + Flash (DAPLink)",
+      "type": "cortex-debug",
+      "request": "launch",
+      "servertype": "openocd",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/MSPM0G3519/Debug/MSPM0G3519.elf",
+      "loadFiles": [
+        "${workspaceFolder}/build/MSPM0G3519/Debug/MSPM0G3519.hex"
+      ],
+      "serverpath": "D:/OPENOCD/openocd-custom-20260615/bin/openocd.exe",
+      "searchDir": [
+        "D:/OPENOCD/openocd-custom-20260615/share/openocd/scripts"
+      ],
+      "configFiles": [
+        "${workspaceFolder}/config/openocd/mspm0_daplink_custom.cfg"
+      ],
+      "gdbPath": "D:/GCC/ARMGCC/10 2021.10/bin/arm-none-eabi-gdb.exe",
+      "objdumpPath": "D:/GCC/ARMGCC/10 2021.10/bin/arm-none-eabi-objdump.exe",
+      "device": "MSPM0G3519",
+      "svdFile": "${workspaceFolder}/../TI ENV/svd/MSPM0G351X.svd",
+      "preLaunchTask": "Prepare Debug: MSPM0G3519 (Debug + DAPLink)",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
+      "runToEntryPoint": "main",
+      "showDevDebugOutput": "none"
+    },
+    {
+      "name": "MSPM0G3507: Debug + Flash (XDS110)",
+      "type": "cortex-debug",
+      "request": "launch",
+      "servertype": "openocd",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/MSPM0G3507/Debug/MSPM0G3507.elf",
+      "loadFiles": [
+        "${workspaceFolder}/build/MSPM0G3507/Debug/MSPM0G3507.hex"
+      ],
+      "serverpath": "D:/OPENOCD/xpack-openocd-0.12.0-7/bin/openocd.exe",
+      "searchDir": [
+        "D:/OPENOCD/xpack-openocd-0.12.0-7/openocd/scripts"
+      ],
+      "configFiles": [
+        "${workspaceFolder}/config/openocd/mspm0_xds110.cfg"
+      ],
+      "gdbPath": "D:/GCC/ARMGCC/10 2021.10/bin/arm-none-eabi-gdb.exe",
+      "objdumpPath": "D:/GCC/ARMGCC/10 2021.10/bin/arm-none-eabi-objdump.exe",
+      "device": "MSPM0G3507",
+      "svdFile": "${workspaceFolder}/../TI ENV/svd/MSPM0G350X.svd",
+      "preLaunchTask": "Prepare Debug: MSPM0G3507 (Debug + XDS110)",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
+      "runToEntryPoint": "main",
+      "showDevDebugOutput": "none"
+    },
+    {
+      "name": "MSPM0G3519: Release + Flash (DAPLink)",
+      "type": "cortex-debug",
+      "request": "launch",
+      "servertype": "openocd",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/MSPM0G3519/Release/MSPM0G3519.elf",
+      "loadFiles": [
+        "${workspaceFolder}/build/MSPM0G3519/Release/MSPM0G3519.hex"
+      ],
+      "serverpath": "D:/OPENOCD/openocd-custom-20260615/bin/openocd.exe",
+      "searchDir": [
+        "D:/OPENOCD/openocd-custom-20260615/share/openocd/scripts"
+      ],
+      "configFiles": [
+        "${workspaceFolder}/config/openocd/mspm0_daplink_custom.cfg"
+      ],
+      "gdbPath": "D:/GCC/ARMGCC/10 2021.10/bin/arm-none-eabi-gdb.exe",
+      "objdumpPath": "D:/GCC/ARMGCC/10 2021.10/bin/arm-none-eabi-objdump.exe",
+      "device": "MSPM0G3519",
+      "svdFile": "${workspaceFolder}/../TI ENV/svd/MSPM0G351X.svd",
+      "preLaunchTask": "Prepare Debug: MSPM0G3519 (Release + DAPLink)",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
+      "runToEntryPoint": "main",
+      "showDevDebugOutput": "none"
+    },
+    {
+      "name": "MSPM0G3507: Release + Flash (XDS110)",
+      "type": "cortex-debug",
+      "request": "launch",
+      "servertype": "openocd",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/MSPM0G3507/Release/MSPM0G3507.elf",
+      "loadFiles": [
+        "${workspaceFolder}/build/MSPM0G3507/Release/MSPM0G3507.hex"
+      ],
+      "serverpath": "D:/OPENOCD/xpack-openocd-0.12.0-7/bin/openocd.exe",
+      "searchDir": [
+        "D:/OPENOCD/xpack-openocd-0.12.0-7/openocd/scripts"
+      ],
+      "configFiles": [
+        "${workspaceFolder}/config/openocd/mspm0_xds110.cfg"
+      ],
+      "gdbPath": "D:/GCC/ARMGCC/10 2021.10/bin/arm-none-eabi-gdb.exe",
+      "objdumpPath": "D:/GCC/ARMGCC/10 2021.10/bin/arm-none-eabi-objdump.exe",
+      "device": "MSPM0G3507",
+      "svdFile": "${workspaceFolder}/../TI ENV/svd/MSPM0G350X.svd",
+      "preLaunchTask": "Prepare Debug: MSPM0G3507 (Release + XDS110)",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
+      "runToEntryPoint": "main",
+      "showDevDebugOutput": "none"
+    }
+  ]
+}
