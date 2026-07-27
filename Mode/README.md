@@ -5,6 +5,7 @@
 - `Car`：Idle、Straight、Turning、Curve、Brake、Done；输出左右轮速度意图。
 - `Gimbal`：Scheduler、AngleLoop、编码器锁定、GimbalStab、VisionStab、
   GravityCalib；输出双轴电流意图。
+- `Communicate`：Bluetooth PC 与双 MCU 通信策略；不持有 UART 或协议实例。
 - `Balance`：平衡车速度/姿态/轮速级联、启动辅助、零点慢学习、反馈超时、
   急停和最终电流安全门；输出左右轮电流意图。
 

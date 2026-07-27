@@ -6,8 +6,10 @@
 默认配置为 Accel 3 g / 400 Hz、Gyro 2000 dps / 1000-116 Hz。`ReadSample()`
 输出 m/s²、deg/s、温度、时间戳和真实 dt，可直接交给 `APP/INS`。
 
-本目录没有 STM32 HAL、固定 SPI、固定引脚或 FreeRTOS Task。当前两颗 MSPM0 的
-BSP 尚未配置 BMI088 SPI 资源，因此模块可编译和主机测试，但不会在上电时访问总线。
+`device_bmi088.c` 不依赖 MCU、固定引脚或 FreeRTOS Task；
+`device_bmi088_spi.c` 复用 BSP 逻辑 SPI handle，负责双 CS、Accel dummy byte 和
+首次 CS 事务切换 SPI 模式。当前 G3519 产品绑定 SPI0、10 MHz Mode 0、PC0 Accel CS
+和 PC1 Gyro CS；具体引脚仍只存在于 SysConfig/BSP。
 
 `Device_BMI088_UpdateIMU()` 是单 BMI088 解算入口：驱动完成物理量换算后，把样本
 提交给统一 `Device_IMU`，由后者完成安装轴映射、静止启动零偏标定和

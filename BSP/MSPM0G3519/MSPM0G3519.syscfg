@@ -26,6 +26,7 @@ const UART        = scripting.addModule("/ti/driverlib/UART", {}, false);
 const DebugUART   = UART.addInstance();
 const AuxUART     = UART.addInstance();
 const BluetoothUART = UART.addInstance();
+const LineTrackingUART = UART.addInstance();
 const SPI         = scripting.addModule("/ti/driverlib/SPI", {}, false);
 const BMI088SPI   = SPI.addInstance();
 const ICM45686SPI = SPI.addInstance();
@@ -281,6 +282,19 @@ BluetoothUART.DMA_CHANNEL_RX.dstIncDec          = "INCREMENT";
 BluetoothUART.DMA_CHANNEL_RX.transferMode       = "SINGLE";
 BluetoothUART.DMA_CHANNEL_RX.enableInterrupt    = true;
 BluetoothUART.DMA_CHANNEL_RX.peripheral.$assign = "DMA_CH2";
+
+LineTrackingUART.$name                    = "LINE_TRACKING_UART";
+LineTrackingUART.targetBaudRate           = 115200;
+LineTrackingUART.enableFIFO               = true;
+LineTrackingUART.rxFifoThreshold          = "DL_UART_RX_FIFO_LEVEL_ONE_ENTRY";
+LineTrackingUART.enabledInterrupts        = ["RX", "OVERRUN_ERROR", "FRAMING_ERROR", "PARITY_ERROR"];
+LineTrackingUART.peripheral.$assign       = "UART3";
+LineTrackingUART.peripheral.txPin.$assign = "PC6";
+LineTrackingUART.peripheral.rxPin.$assign = "PC7";
+LineTrackingUART.txPinConfig.$name        = "ti_driverlib_gpio_LineTrackingUartTx";
+LineTrackingUART.rxPinConfig.enableConfig = true;
+LineTrackingUART.rxPinConfig.internalResistor = "PULL_UP";
+LineTrackingUART.rxPinConfig.$name        = "ti_driverlib_gpio_LineTrackingUartRx";
 
 BMI088SPI.$name                      = "BMI088_SPI";
 BMI088SPI.mode                       = "CONTROLLER";

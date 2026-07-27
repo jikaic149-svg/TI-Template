@@ -7,10 +7,12 @@
 
 - FreeRTOS V11.3.0 始终编译，并提供静态控制 Task 骨架。
 - 具体项目由 Task 直接读取 Device、调用 Mode，再提交 Device 输出。
-- 模板不包含具体题目或产品组合代码。
+- 基础 preset 不运行具体产品逻辑；循迹产品 Task 只在专用 preset 中显式启用。
 - 电机及其他可能产生运动的输出不在基础模板中初始化。
 - G3519 的 UART4 蓝牙口（PB10/PB11，115200，RX DMA_CH2）由 BSP 初始化；
   G3519 preset 同时编译 `Device_Serial`，但不擅自发送任何业务数据。
+- G3519 的 UART3（PC6 TX、PC7 RX，115200 8N1）预留给芯流 T8；基础 preset
+  不查询传感器，只有循迹专用 preset 使用它。
 
 ## 目录
 
@@ -25,6 +27,7 @@ TI Template/
 │  ├─ PID/                    PID、角度、限幅和斜率限制
 │  ├─ Filter/                 低通、滑动平均和三点中值滤波
 │  ├─ Mahony/                 无硬件依赖的 6 轴 Mahony 姿态解算
+│  ├─ IMUFusion/              双 IMU 标定、置信度融合与姿态传播
 │  ├─ Packet/                 LF/CRC16 数据包编解码
 │  ├─ ReliableLink/           ACK、超时、重试和重复抑制
 │  ├─ SPSC_Ring/              RTOS 无关的单生产者/消费者字节环
@@ -38,8 +41,11 @@ TI Template/
 │  │  └─ Motor/               默认锁定的有符号电机命令
 │  ├─ Sensor/
 │  │  ├─ Encoder/             累计值、增量、距离和速度
-│  │  ├─ JY61P/               字节流解析、Yaw 清零和离线检测
-│  │  └─ IMU/                 轴映射、零偏标定和姿态快照
+│  │  └─ IMU/                 通用 IMU 与具体传感器驱动
+│  │     ├─ BMI088/           BMI088 寄存器驱动与 BSP SPI 适配
+│  │     ├─ ICM45686/         ICM-45686 寄存器驱动与 BSP SPI 适配
+│  │     ├─ JY61P/            JY61P 字节流解析
+│  │     └─ LingkeM0/         棱科 M0 单轴 UART 协议驱动
 │  ├─ Storage/
 │  │  └─ Flash/               DATA-Flash 持久化适配
 │  └─ Communication/
@@ -80,13 +86,29 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\mspm0.ps1 `
   -Action Build -Device MSPM0G3519 -Configuration Debug -MotorDriver AT8236
 ```
 
-六套 preset：
+构建芯流 T8 只读或模拟循迹三级串级 profile：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\mspm0.ps1 `
+  -Action Build -Device MSPM0G3519 -Configuration Debug `
+  -MotorDriver TB6612 -TaskProfile LineTrackingReadout
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\mspm0.ps1 `
+  -Action Build -Device MSPM0G3519 -Configuration Debug `
+  -MotorDriver TB6612 -TaskProfile AnalogTracking
+```
+
+十套 preset：
 
 ```text
 g3507-debug
 g3507-release
 g3519-debug
 g3519-release
+g3519-tb6612-line-readout-debug
+g3519-tb6612-line-readout-release
+g3519-tb6612-analog-tracking-debug
+g3519-tb6612-analog-tracking-release
 g3519-at8236-debug
 g3519-at8236-release
 ```
@@ -120,14 +142,18 @@ Algorithm 与 Device 默认关闭，只有显式打开对应选项时才进入�
 - Device：`TEMPLATE_ENABLE_DEVICE_KEY`、`TEMPLATE_ENABLE_DEVICE_MOTOR`、
   `TEMPLATE_ENABLE_DEVICE_POWER_SWITCH`、
   `TEMPLATE_ENABLE_DEVICE_ENCODER`、`TEMPLATE_ENABLE_DEVICE_JY61P`、
+  `TEMPLATE_ENABLE_DEVICE_LINGKE_M0`、
   `TEMPLATE_ENABLE_DEVICE_BMI088`、`TEMPLATE_ENABLE_DEVICE_ICM45686`、
   `TEMPLATE_ENABLE_DEVICE_IMU`、`TEMPLATE_ENABLE_DEVICE_VISION`、
+  `TEMPLATE_ENABLE_DEVICE_LINE_TRACKING`、`TEMPLATE_ENABLE_DEVICE_XINLIU_T8`、
   `TEMPLATE_ENABLE_DEVICE_QD4310`、`TEMPLATE_ENABLE_DEVICE_FLASH`。
+- Product Task：`TEMPLATE_ENABLE_TASK_LINE_TRACKING_READOUT`、
+  `TEMPLATE_ENABLE_TASK_ANALOG_TRACKING`，两者互斥。
 
 设置时在选项名后加 `=ON`。CMake 只自动带入被选模块必需的传递依赖，例如
-具体 ICM-45686 或 BMI088 会带入统一 Device_IMU 与 Mahony，Vision 带入
-ReliableLink/Packet，Car Mode 带入 PID；不会把整个 Algorithm 或 Device
-目录全部编译。
+具体 ICM-45686 或 BMI088 会带入统一 Device_IMU 与 Mahony，两颗同时启用会额外
+带入 IMUFusion；Vision 带入 ReliableLink/Packet，Car Mode 带入 PID；不会把整个
+Algorithm 或 Device 目录全部编译。
 
 各模块保留 host 测试源码和 ARM 编译脚本；当前电脑已经可以直接编译并运行
 host 测试，同时继续用 Cortex-M0+ 严格编译检查目标端兼容性，不需要关闭或绕过

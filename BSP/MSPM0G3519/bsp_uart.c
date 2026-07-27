@@ -5,7 +5,7 @@
 
 #include "bsp_resource_map.h"
 
-#define BSP_UART_COUNT          3U
+#define BSP_UART_COUNT          4U
 #define BSP_UART_RX_BUFFER_SIZE 128U
 #define BSP_UART_RX_CAPACITY    (BSP_UART_RX_BUFFER_SIZE - 1U)
 #define BSP_UART_TX_BUFFER_SIZE 1024U
@@ -49,6 +49,9 @@ static struct BSP_UART_Resource g_uart[BSP_UART_COUNT] = {
      .baud_rate = BSP_RESOURCE_BLUETOOTH_UART_BAUD,
      .dma_rx_channel = BSP_RESOURCE_BLUETOOTH_DMA_RX,
      .uses_rx_dma = true},
+    {.instance = BSP_RESOURCE_LINE_TRACKING_UART,
+     .irq = BSP_RESOURCE_LINE_TRACKING_UART_IRQ,
+     .baud_rate = BSP_RESOURCE_LINE_TRACKING_UART_BAUD},
 };
 
 static struct BSP_UART_Resource *uart_from_handle(BSP_UART_Handle uart)
@@ -757,4 +760,9 @@ void UART1_IRQHandler(void)
 void UART4_IRQHandler(void)
 {
     uart_irq(&g_uart[2]);
+}
+
+void UART3_IRQHandler(void)
+{
+    uart_irq(&g_uart[3]);
 }

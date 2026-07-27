@@ -4,5 +4,6 @@
 # Sensor
 
 - `Encoder/`：编码器累计值、增量、速度与里程。
-- `IMU/`：通用 IMU、BMI088 与 JY61P。
-- `LineTracking/`：数字/模拟多通道循迹的阈值、权重、位置、偏差、丢线与交叉口识别。
+- `IMU/`：通用 IMU、BMI088、ICM-45686、JY61P 与棱科 M0。
+- `LineTracking/`：数字/模拟多通道循迹的权重、位置、偏差、丢线与交叉口识别；
+  `XinliuT8/` 解析 UART 查询返回的八路 ADC，模拟路径不做逐通道阈值化。

@@ -38,7 +38,8 @@
   两路 20 kHz PWM、PA24..PA27 四方向 GPIO和 PB21 STBY；AT8236 使用
   PC2/PC4/PB20/PA25 四路 TIMA0 20 kHz PWM，正反向为 `PWM/0`、`0/PWM`。
 - 电机型号：当前使用 MG310 GMR版和 MG513X GMR版，两者均标称500线；
-  用户确认按 QEI 四倍频换算，输出轴分别为40818和56000 count/rev。
+  MG310 按 QEI 四倍频记录为40818 count/rev，MG513X 的“500线”边沿定义和
+  输出轴 CPR 待手转一圈实测。MG513X 当前配套轮胎直径为65 mm。
 - Encoder：BSP 使用显式 handle，并同时提供累计 snapshot 与增量读取。
 - UART：BSP 提供 blocking 和可选 DMA 字节传输；数据包/视觉协议不进入 BSP，
   上层以 `\n` 作为帧结束标志。
@@ -61,8 +62,6 @@
   Mahony Algorithm 负责 6 轴姿态解算。Mode 只消费抽象反馈，不依赖具体 IMU。
 - 单 ICM-45686 与单 BMI088 复用同一个 `Device_IMU`/`Algorithm_Mahony`，各具体
   Device 只负责读数、量纲换算和提交；不为传感器型号复制 Mahony 或零偏逻辑。
-- `vision_track_mode` 属于 `Mode/Car`，持有 yaw 与双轮速度串级控制状态；视觉协议、
-  IMU、编码器和电机提交仍由 Device/Task 负责。
 - `-25E` 与 `jixun-2` 的正式 Mode 和 Task 行为按需求独立重写，不复制源码。
 - `jixun3/Application` 整体按职责迁移：纯算法进入 APP，协议进入 Device，
   平衡/云台/产品安全状态进入 Mode，1 kHz 执行与 Device 搬运进入静态

@@ -1,0 +1,17 @@
+# Xinliu T8 UART Device
+
+芯流科技八路循迹传感器的无阻塞 UART 协议 Device。本层只实现快速手册 V1.1 的
+`0x19` 完整八路 ADC 查询，不启用连续回报、数字量、I2C 地址或阈值写入命令。
+
+查询帧固定为：
+
+```text
+AA 55 00 01 19 1A 66
+```
+
+有效响应为 22 字节：`AA 55 19 10`、八个小端 `uint16_t` ADC、累加校验和、
+`66`。校验覆盖命令回显、长度和 16 字节数据。解析器不访问 BSP、不等待串口、
+不动态分配内存，支持噪声丢弃、流重同步、错误统计和回绕安全的新鲜度判断。
+
+串口收发由 Task 通过 `Device_Serial` 完成；完整接入说明见
+[`docs/LINE_TRACKING_T8_READOUT.md`](../../../../docs/LINE_TRACKING_T8_READOUT.md)。

@@ -47,10 +47,10 @@ bool Algorithm_LineTracking_Init(
 void Algorithm_LineTracking_Reset(Algorithm_LineTracking *algorithm);
 
 /* For two sensors, difference_ratio is exactly (R-L)/(R+L+epsilon).
- * For a multi-channel array, channels left and right of target_position are
- * averaged into L/R groups, which prevents unequal group sizes from biasing
- * the result. A weighted centroid is fused in to retain distance information
- * on arrays with more than two channels. */
+ * For a multi-channel array, each channel is weighted by its distance from
+ * target_position before the left/right levels are normalized. Therefore an
+ * outer channel produces a larger correction than an inner channel. A
+ * weighted centroid can optionally be fused with the weighted ratio. */
 bool Algorithm_LineTracking_Update(
     Algorithm_LineTracking *algorithm,
     const Algorithm_LineTracking_Input *input,

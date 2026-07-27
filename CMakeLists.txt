@@ -32,6 +32,9 @@ option(TEMPLATE_ENABLE_MODE_CAR
 option(TEMPLATE_ENABLE_MODE_GIMBAL
     "Compile the reusable two-axis gimbal modes"
     OFF)
+option(TEMPLATE_ENABLE_MODE_COMMUNICATE
+    "Compile the Bluetooth PC/dual-MCU communication policies"
+    OFF)
 option(TEMPLATE_ENABLE_ALGORITHM_SPSC_RING
     "Compile the RTOS-independent SPSC byte ring component"
     OFF)
@@ -89,8 +92,14 @@ option(TEMPLATE_ENABLE_DEVICE_ENCODER
 option(TEMPLATE_ENABLE_DEVICE_LINE_TRACKING
     "Compile the configurable multi-channel line-tracking Device"
     OFF)
+option(TEMPLATE_ENABLE_DEVICE_XINLIU_T8
+    "Compile the Xinliu T8 UART eight-channel ADC protocol Device"
+    OFF)
 option(TEMPLATE_ENABLE_DEVICE_JY61P
     "Compile the JY61P byte-stream Device"
+    OFF)
+option(TEMPLATE_ENABLE_DEVICE_LINGKE_M0
+    "Compile the Lingke M0 byte-stream IMU Device"
     OFF)
 option(TEMPLATE_ENABLE_DEVICE_BMI088
     "Compile the BMI088 register-level Device"
@@ -110,6 +119,12 @@ option(TEMPLATE_ENABLE_DEVICE_SERIAL
 option(TEMPLATE_ENABLE_DEVICE_FLASH
     "Compile the persistent DATA-Flash Device adapter"
     OFF)
+option(TEMPLATE_ENABLE_TASK_LINE_TRACKING_READOUT
+    "Build the read-only Xinliu T8 analog line-tracking Task"
+    OFF)
+option(TEMPLATE_ENABLE_TASK_ANALOG_TRACKING
+    "Build the TB6612 + ICM45686 + Xinliu T8 analog-tracking Task"
+    OFF)
 
 # Resolve only the transitive modules that an explicitly selected feature
 # needs. These are ordinary variables rather than forced cache values, so
@@ -127,6 +142,7 @@ set(TEMPLATE_BUILD_ALGORITHM_FILTER
     "${TEMPLATE_ENABLE_ALGORITHM_FILTER}")
 set(TEMPLATE_BUILD_ALGORITHM_MAHONY
     "${TEMPLATE_ENABLE_ALGORITHM_MAHONY}")
+set(TEMPLATE_BUILD_ALGORITHM_IMU_FUSION OFF)
 set(TEMPLATE_BUILD_ALGORITHM_LINE_TRACKING
     "${TEMPLATE_ENABLE_ALGORITHM_LINE_TRACKING}")
 set(TEMPLATE_BUILD_ALGORITHM_LQR
@@ -144,6 +160,9 @@ set(TEMPLATE_BUILD_DEVICE_LINE_TRACKING
 if(TEMPLATE_ENABLE_DEVICE_BMI088 OR TEMPLATE_ENABLE_DEVICE_ICM45686)
     set(TEMPLATE_BUILD_DEVICE_IMU ON)
 endif()
+if(TEMPLATE_ENABLE_DEVICE_BMI088 AND TEMPLATE_ENABLE_DEVICE_ICM45686)
+    set(TEMPLATE_BUILD_ALGORITHM_IMU_FUSION ON)
+endif()
 if(TEMPLATE_ENABLE_MODE_CAR)
     set(TEMPLATE_BUILD_ALGORITHM_PID ON)
 endif()
@@ -155,6 +174,9 @@ if(TEMPLATE_BUILD_ALGORITHM_RELIABLE_LINK)
     set(TEMPLATE_BUILD_ALGORITHM_PACKET ON)
 endif()
 if(TEMPLATE_BUILD_DEVICE_IMU)
+    set(TEMPLATE_BUILD_ALGORITHM_MAHONY ON)
+endif()
+if(TEMPLATE_BUILD_ALGORITHM_IMU_FUSION)
     set(TEMPLATE_BUILD_ALGORITHM_MAHONY ON)
 endif()
 if(TEMPLATE_BUILD_DEVICE_LINE_TRACKING)
@@ -344,6 +366,9 @@ if(TEMPLATE_ENABLE_MODE_CAR)
 endif()
 if(TEMPLATE_ENABLE_MODE_GIMBAL)
     add_subdirectory(Mode/Gimbal)
+endif()
+if(TEMPLATE_ENABLE_MODE_COMMUNICATE)
+    add_subdirectory(Mode/Communicate)
 endif()
 add_subdirectory(FreeRTOS)
 add_subdirectory(Task)

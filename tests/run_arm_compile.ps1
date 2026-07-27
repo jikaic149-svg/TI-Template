@@ -13,19 +13,21 @@ $outputDirectory = Join-Path $workspaceRoot "build\arm-check"
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
 $includes = @(
+    "APP\Algorithm\IMUFusion\include",
     "APP\Algorithm\Mahony\include",
-    "APP\Algorithm\PID\include",
     "Device\Sensor\IMU",
     "Device\Sensor\IMU\ICM45686",
     "Device\Sensor\IMU\BMI088",
-    "Mode\Car\include"
+    "Mode\Communicate\include"
 )
 $includeArguments = @()
 foreach ($include in $includes) {
     $includeArguments += @("-I", (Join-Path $workspaceRoot $include))
 }
 $sources = @(
-    "Mode\Car\Tracking\vision_track_mode.c",
+    "APP\Algorithm\IMUFusion\src\algorithm_imu_fusion.c",
+    "Mode\Communicate\Bluetooth\mode_communicate_bluetooth_pc.c",
+    "Mode\Communicate\Bluetooth\mode_communicate_bluetooth_dual_mcu.c",
     "Device\Sensor\IMU\ICM45686\device_icm45686.c",
     "Device\Sensor\IMU\BMI088\device_bmi088.c"
 )

@@ -23,6 +23,8 @@
 - `Mahony`：无硬件、无 RTOS 的 6 轴 Mahony 姿态解算；通过
   `TEMPLATE_ENABLE_ALGORITHM_MAHONY=ON` 显式加入编译链，选择通用
   `Device/Sensor/IMU` 时会自动带入。
+- `IMUFusion`：双 IMU 启动标定、置信度融合和姿态传播；同时启用 BMI088 与
+  ICM45686 时自动加入，并复用 `Mahony` 的公共姿态数据类型。
 - `LQR`：固定、增益调度和增量式 LQR；通过
   `TEMPLATE_ENABLE_ALGORITHM_LQR=ON` 显式加入编译链。
 - `ADRC`：一阶 ESO 与 PI-ESO；通过

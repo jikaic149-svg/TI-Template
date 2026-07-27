@@ -242,6 +242,66 @@ bool Mode_Car_Tracking_Update(
     const Mode_Car_TrackingInput *input,
     Mode_Car_Output *output);
 
+/* Digital and analog line sensors intentionally use distinct Mode entry
+ * points. The digital Mode consumes a threshold/bit-derived error. */
+typedef Mode_Car_TrackingConfig Mode_Car_DigitalTrackingConfig;
+
+typedef struct {
+    Mode_Car_TimeInput time;
+    float base_drive;
+    float digital_error;
+    bool line_valid;
+    bool line_lost;
+    bool intersection;
+} Mode_Car_DigitalTrackingInput;
+
+typedef struct {
+    Mode_Car_TrackingContext core;
+    bool initialized;
+} Mode_Car_DigitalTrackingContext;
+
+Mode_Car_DigitalTrackingConfig
+Mode_Car_DigitalTracking_DefaultConfig(void);
+bool Mode_Car_DigitalTracking_Init(
+    Mode_Car_DigitalTrackingContext *context,
+    const Mode_Car_DigitalTrackingConfig *config);
+bool Mode_Car_DigitalTracking_Update(
+    Mode_Car_DigitalTrackingContext *context,
+    const Mode_Car_DigitalTrackingInput *input,
+    Mode_Car_Output *output);
+
+/* The analog Mode additionally gates steering on confidence produced from
+ * the current frame's total multi-channel contrast. */
+typedef struct {
+    Mode_Car_TrackingConfig steering;
+    float minimum_confidence;
+} Mode_Car_AnalogTrackingConfig;
+
+typedef struct {
+    Mode_Car_TimeInput time;
+    float base_drive;
+    float analog_error;
+    float confidence;
+    bool line_valid;
+    bool line_lost;
+    bool intersection;
+} Mode_Car_AnalogTrackingInput;
+
+typedef struct {
+    Mode_Car_TrackingContext core;
+    float minimum_confidence;
+    bool initialized;
+} Mode_Car_AnalogTrackingContext;
+
+Mode_Car_AnalogTrackingConfig Mode_Car_AnalogTracking_DefaultConfig(void);
+bool Mode_Car_AnalogTracking_Init(
+    Mode_Car_AnalogTrackingContext *context,
+    const Mode_Car_AnalogTrackingConfig *config);
+bool Mode_Car_AnalogTracking_Update(
+    Mode_Car_AnalogTrackingContext *context,
+    const Mode_Car_AnalogTrackingInput *input,
+    Mode_Car_Output *output);
+
 typedef struct {
     float stopped_speed_threshold;
     float stable_time_seconds;

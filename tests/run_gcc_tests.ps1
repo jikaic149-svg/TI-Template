@@ -55,15 +55,20 @@ function Invoke-HostTest {
     }
 }
 
-Invoke-HostTest -Name "vision_track_mode" -Includes @(
-    "APP\Algorithm\PID\include",
-    "Mode\Car\include"
+Invoke-HostTest -Name "algorithm_imu_fusion" -Includes @(
+    "APP\Algorithm\IMUFusion\include",
+    "APP\Algorithm\Mahony\include"
 ) -Sources @(
-    "APP\Algorithm\PID\src\algorithm_pid.c",
-    "Mode\Car\Control\mode_car_angle_controller.c",
-    "Mode\Car\Control\mode_car_speed_controller.c",
-    "Mode\Car\Tracking\vision_track_mode.c",
-    "tests\vision_track_mode\test_vision_track_mode.c"
+    "APP\Algorithm\IMUFusion\src\algorithm_imu_fusion.c",
+    "tests\imu_fusion\test_algorithm_imu_fusion.c"
+)
+
+Invoke-HostTest -Name "mode_communicate" -Includes @(
+    "Mode\Communicate\include"
+) -Sources @(
+    "Mode\Communicate\Bluetooth\mode_communicate_bluetooth_pc.c",
+    "Mode\Communicate\Bluetooth\mode_communicate_bluetooth_dual_mcu.c",
+    "tests\mode_communicate\test_mode_communicate.c"
 )
 
 Invoke-HostTest -Name "single_imu" -Includes @(
@@ -96,4 +101,47 @@ Invoke-HostTest -Name "motor_models" -Includes @(
     "Device\Actuator\Motor\MG513X"
 ) -Sources @(
     "tests\motor_models\test_motor_models.c"
+)
+
+Invoke-HostTest -Name "lingke_m0" -Includes @(
+    "Device\Sensor\IMU\LingkeM0"
+) -Sources @(
+    "Device\Sensor\IMU\LingkeM0\device_lingke_m0.c",
+    "tests\lingke_m0\test_device_lingke_m0.c"
+)
+
+Invoke-HostTest -Name "fused_navigation_mode" -Includes @(
+    "APP\Algorithm\PID\include",
+    "Mode\Car\include",
+    "Mode\Car\src"
+) -Sources @(
+    "APP\Algorithm\PID\src\algorithm_pid.c",
+    "Mode\Car\src\mode_car_common.c",
+    "Mode\Car\src\mode_car_curve.c",
+    "Mode\Car\Spin\mode_car_spin.c",
+    "Mode\Car\Control\mode_car_speed_controller.c",
+    "Mode\Car\Navigation\mode_car_fused_navigation.c",
+    "tests\fused_navigation_mode\test_mode_car_fused_navigation.c"
+)
+
+Invoke-HostTest -Name "line_tracking_uart" -Includes @(
+    "APP\Algorithm\LineTracking\include",
+    "APP\Algorithm\PID\include",
+    "BSP",
+    "Device\Sensor\LineTracking",
+    "Device\Sensor\LineTracking\XinliuT8",
+    "Mode\Car\include",
+    "Mode\Car\src"
+) -Sources @(
+    "APP\Algorithm\LineTracking\src\algorithm_line_tracking.c",
+    "APP\Algorithm\PID\src\algorithm_pid.c",
+    "Device\Sensor\LineTracking\device_line_tracking.c",
+    "Device\Sensor\LineTracking\XinliuT8\device_xinliu_t8.c",
+    "Mode\Car\src\mode_car_common.c",
+    "Mode\Car\Tracking\mode_car_tracking.c",
+    "Mode\Car\Tracking\mode_car_digital_tracking.c",
+    "Mode\Car\Tracking\mode_car_analog_tracking.c",
+    "Mode\Car\Control\mode_car_angle_controller.c",
+    "Mode\Car\Control\mode_car_speed_controller.c",
+    "tests\line_tracking_uart\test_line_tracking_uart.c"
 )

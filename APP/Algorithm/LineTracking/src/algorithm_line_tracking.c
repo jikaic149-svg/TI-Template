@@ -74,9 +74,9 @@ bool Algorithm_LineTracking_Update(
     float maximum_position = -FLT_MAX;
     float left_sum = 0.0F;
     float right_sum = 0.0F;
+    float left_weight_sum = 0.0F;
+    float right_weight_sum = 0.0F;
     float maximum_span = 0.0F;
-    size_t left_count = 0U;
-    size_t right_count = 0U;
     size_t index;
 
     if ((algorithm == NULL) || !algorithm->initialized ||
@@ -110,12 +110,12 @@ bool Algorithm_LineTracking_Update(
             maximum_span = span;
         }
         if (position < input->target_position) {
-            left_sum += strength;
-            ++left_count;
+            left_sum += strength * span;
+            left_weight_sum += span;
         }
         else if (position > input->target_position) {
-            right_sum += strength;
-            ++right_count;
+            right_sum += strength * span;
+            right_weight_sum += span;
         }
     }
     if (!finite_value(strength_sum) ||
@@ -124,10 +124,10 @@ bool Algorithm_LineTracking_Update(
     }
 
     next.centroid_position = weighted_sum / strength_sum;
-    next.left_level = (left_count > 0U) ?
-        left_sum / (float)left_count : 0.0F;
-    next.right_level = (right_count > 0U) ?
-        right_sum / (float)right_count : 0.0F;
+    next.left_level = (left_weight_sum > 0.0F) ?
+        left_sum / left_weight_sum : 0.0F;
+    next.right_level = (right_weight_sum > 0.0F) ?
+        right_sum / right_weight_sum : 0.0F;
     next.denominator = next.left_level + next.right_level;
     next.difference_ratio =
         (next.right_level - next.left_level) /
