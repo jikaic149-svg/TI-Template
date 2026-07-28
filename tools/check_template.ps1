@@ -68,13 +68,17 @@ foreach ($relative in $requiredConfigFiles) {
 
 $configRoot = Join-Path $Root "config"
 if (Test-Path -LiteralPath $configRoot -PathType Container) {
-    $allowedConfigDirectories = @("config\cmake", "config\openocd")
+    $allowedConfigDirectories = @(
+        "config\cmake",
+        "config\openocd",
+        "config\verification"
+    )
     $configDirectories = Get-ChildItem -LiteralPath $configRoot -Directory -Recurse -Force
     foreach ($directory in $configDirectories) {
         $relative = (Get-RelativeTemplatePath -Path $directory.FullName).Replace("/", "\")
         if ($relative -notin $allowedConfigDirectories) {
             Add-Finding -Path $directory.FullName -Line 1 -Reason (
-                "unexpected configuration directory; use config/cmake or config/openocd")
+                "unexpected configuration directory under config")
         }
     }
 
@@ -86,7 +90,8 @@ if (Test-Path -LiteralPath $configRoot -PathType Container) {
             $relative -cmatch '^config\\[^\\]+_config\.h$' -or
             $relative -cmatch '^config\\cmake\\[^\\]+\.cmake$' -or
             $relative -ceq "config\openocd\README.md" -or
-            $relative -cmatch '^config\\openocd\\[^\\]+\.cfg(?:\.example)?$'
+            $relative -cmatch '^config\\openocd\\[^\\]+\.cfg(?:\.example)?$' -or
+            $relative -ceq "config\verification\components.json"
         )
         if (-not $allowed) {
             Add-Finding -Path $file.FullName -Line 1 -Reason (
@@ -270,6 +275,45 @@ if (Test-Path -LiteralPath $taskDirectory -PathType Container) {
                 Add-Finding -Path $taskEntryPath -Line 1 -Reason (
                     "FreeRTOS task entry is missing '{0}'" -f $requiredToken)
             }
+        }
+    }
+}
+
+# A healthy non-critical caller must never mask a dead control Task. Keep both
+# watchdog feed APIs single-owner even though their headers are public.
+$watchdogFeedRules = @(
+    @{
+        Pattern = '\bDevice_Watchdog_Feed\s*\('
+        Allowed = @(
+            "Device\System\Watchdog\device_watchdog.c",
+            "Task\task_app.c"
+        )
+        Reason = "Device watchdog feed must be owned only by Task/task_app.c"
+    },
+    @{
+        Pattern = '\bBSP_Watchdog_Feed\s*\('
+        Allowed = @(
+            "BSP\MSPM0G3507\bsp_watchdog.c",
+            "BSP\MSPM0G3519\bsp_watchdog.c",
+            "Device\System\Watchdog\device_watchdog.c"
+        )
+        Reason = "BSP watchdog feed must be reached only through Device_Watchdog"
+    }
+)
+$watchdogSources = Get-ChildItem -LiteralPath $Root -File -Recurse |
+    Where-Object {
+        $_.Extension -ceq ".c" -and
+        $_.FullName -notmatch '[\\/]build[\\/]'
+    }
+foreach ($rule in $watchdogFeedRules) {
+    foreach ($file in $watchdogSources) {
+        $relative = (Get-RelativeTemplatePath -Path $file.FullName).Replace("/", "\")
+        if ($relative -in $rule.Allowed) {
+            continue
+        }
+        $matches = @(Select-String -LiteralPath $file.FullName -Pattern $rule.Pattern -AllMatches)
+        foreach ($match in $matches) {
+            Add-Finding -Path $file.FullName -Line $match.LineNumber -Reason $rule.Reason
         }
     }
 }

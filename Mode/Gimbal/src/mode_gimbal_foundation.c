@@ -1,4 +1,5 @@
 #include "mode_gimbal_internal.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -126,22 +127,28 @@ Mode_Gimbal_AngleLoop_DefaultPitchConfig(void)
 {
     Mode_Gimbal_AngleLoopConfig config;
 
-    config.kp = 0.038F;
-    config.ki = 0.006F;
-    config.kd_speed = 0.0045F;
-    config.polarity = 1.0F;
-    config.deadband_deg = 0.3F;
-    config.maximum_error_deg = 14.0F;
-    config.integral_separation_deg = 1.5F;
-    config.integral_limit = 0.025F;
-    config.output_limit = 0.75F;
-    config.feedforward_threshold_deg = 0.8F;
-    config.positive_feedforward = 0.0F;
-    config.negative_feedforward = 0.0F;
-    config.wrap_error = false;
-    config.target_limit_enabled = true;
-    config.target_minimum_deg = 19.0F;
-    config.target_maximum_deg = 112.0F;
+    config.kp = TEMPLATE_GIMBAL_PITCH_LOOP_KP;
+    config.ki = TEMPLATE_GIMBAL_PITCH_LOOP_KI;
+    config.kd_speed = TEMPLATE_GIMBAL_PITCH_LOOP_KD_SPEED;
+    config.polarity = TEMPLATE_GIMBAL_PITCH_LOOP_POLARITY;
+    config.deadband_deg = TEMPLATE_GIMBAL_PITCH_LOOP_DEADBAND_DEG;
+    config.maximum_error_deg =
+        TEMPLATE_GIMBAL_PITCH_LOOP_MAXIMUM_ERROR_DEG;
+    config.integral_separation_deg =
+        TEMPLATE_GIMBAL_PITCH_LOOP_INTEGRAL_SEPARATION_DEG;
+    config.integral_limit = TEMPLATE_GIMBAL_PITCH_LOOP_INTEGRAL_LIMIT;
+    config.output_limit = TEMPLATE_GIMBAL_PITCH_LOOP_OUTPUT_LIMIT;
+    config.feedforward_threshold_deg =
+        TEMPLATE_GIMBAL_PITCH_LOOP_FEEDFORWARD_THRESHOLD_DEG;
+    config.positive_feedforward =
+        TEMPLATE_GIMBAL_PITCH_LOOP_POSITIVE_FEEDFORWARD;
+    config.negative_feedforward =
+        TEMPLATE_GIMBAL_PITCH_LOOP_NEGATIVE_FEEDFORWARD;
+    config.wrap_error = TEMPLATE_GIMBAL_PITCH_LOOP_WRAP_ERROR;
+    config.target_limit_enabled =
+        TEMPLATE_GIMBAL_PITCH_LOOP_TARGET_LIMIT_ENABLED;
+    config.target_minimum_deg = TEMPLATE_GIMBAL_PITCH_MINIMUM_DEG;
+    config.target_maximum_deg = TEMPLATE_GIMBAL_PITCH_MAXIMUM_DEG;
     return config;
 }
 
@@ -150,20 +157,26 @@ Mode_Gimbal_AngleLoop_DefaultYawConfig(void)
 {
     Mode_Gimbal_AngleLoopConfig config;
 
-    config.kp = 0.032F;
-    config.ki = 0.006F;
-    config.kd_speed = 0.005F;
-    config.polarity = 1.0F;
-    config.deadband_deg = 0.35F;
-    config.maximum_error_deg = 8.0F;
-    config.integral_separation_deg = 2.0F;
-    config.integral_limit = 0.015F;
-    config.output_limit = 0.32F;
-    config.feedforward_threshold_deg = 0.8F;
-    config.positive_feedforward = 0.0F;
-    config.negative_feedforward = 0.0F;
-    config.wrap_error = true;
-    config.target_limit_enabled = false;
+    config.kp = TEMPLATE_GIMBAL_YAW_LOOP_KP;
+    config.ki = TEMPLATE_GIMBAL_YAW_LOOP_KI;
+    config.kd_speed = TEMPLATE_GIMBAL_YAW_LOOP_KD_SPEED;
+    config.polarity = TEMPLATE_GIMBAL_YAW_LOOP_POLARITY;
+    config.deadband_deg = TEMPLATE_GIMBAL_YAW_LOOP_DEADBAND_DEG;
+    config.maximum_error_deg =
+        TEMPLATE_GIMBAL_YAW_LOOP_MAXIMUM_ERROR_DEG;
+    config.integral_separation_deg =
+        TEMPLATE_GIMBAL_YAW_LOOP_INTEGRAL_SEPARATION_DEG;
+    config.integral_limit = TEMPLATE_GIMBAL_YAW_LOOP_INTEGRAL_LIMIT;
+    config.output_limit = TEMPLATE_GIMBAL_YAW_LOOP_OUTPUT_LIMIT;
+    config.feedforward_threshold_deg =
+        TEMPLATE_GIMBAL_YAW_LOOP_FEEDFORWARD_THRESHOLD_DEG;
+    config.positive_feedforward =
+        TEMPLATE_GIMBAL_YAW_LOOP_POSITIVE_FEEDFORWARD;
+    config.negative_feedforward =
+        TEMPLATE_GIMBAL_YAW_LOOP_NEGATIVE_FEEDFORWARD;
+    config.wrap_error = TEMPLATE_GIMBAL_YAW_LOOP_WRAP_ERROR;
+    config.target_limit_enabled =
+        TEMPLATE_GIMBAL_YAW_LOOP_TARGET_LIMIT_ENABLED;
     config.target_minimum_deg = 0.0F;
     config.target_maximum_deg = 0.0F;
     return config;

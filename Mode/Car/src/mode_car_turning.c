@@ -1,4 +1,5 @@
 #include "mode_car_internal.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -6,15 +7,19 @@
 Mode_Car_TurningConfig Mode_Car_Turning_DefaultConfig(void)
 {
     const Mode_Car_TurningConfig config = {
-        .kp = 1.5F,
-        .ki = 0.5F,
-        .kd = 2.0F,
-        .gain_reference_seconds = 0.005F,
-        .integral_output_limit = 300.0F,
-        .maximum_turn_drive = 150.0F,
-        .minimum_turn_drive = 50.0F,
-        .deceleration_zone_deg = 45.0F,
-        .arrival_tolerance_deg = 0.5F,
+        .kp = TEMPLATE_CAR_TURNING_KP,
+        .ki = TEMPLATE_CAR_TURNING_KI,
+        .kd = TEMPLATE_CAR_TURNING_KD,
+        .gain_reference_seconds =
+            TEMPLATE_CAR_TURNING_GAIN_REFERENCE_SECONDS,
+        .integral_output_limit =
+            TEMPLATE_CAR_TURNING_INTEGRAL_OUTPUT_LIMIT,
+        .maximum_turn_drive = TEMPLATE_CAR_TURNING_MAXIMUM_DRIVE,
+        .minimum_turn_drive = TEMPLATE_CAR_TURNING_MINIMUM_DRIVE,
+        .deceleration_zone_deg =
+            TEMPLATE_CAR_TURNING_DECELERATION_ZONE_DEG,
+        .arrival_tolerance_deg =
+            TEMPLATE_CAR_TURNING_ARRIVAL_TOLERANCE_DEG,
     };
     return config;
 }

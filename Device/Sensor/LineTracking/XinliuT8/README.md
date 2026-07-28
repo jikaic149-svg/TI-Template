@@ -13,5 +13,4 @@ AA 55 00 01 19 1A 66
 `66`。校验覆盖命令回显、长度和 16 字节数据。解析器不访问 BSP、不等待串口、
 不动态分配内存，支持噪声丢弃、流重同步、错误统计和回绕安全的新鲜度判断。
 
-串口收发由 Task 通过 `Device_Serial` 完成；完整接入说明见
-[`docs/LINE_TRACKING_T8_READOUT.md`](../../../../docs/LINE_TRACKING_T8_READOUT.md)。
+串口收发由具体产品 Task 通过 `Device_Serial` 完成；通用模板不提供产品 Task。

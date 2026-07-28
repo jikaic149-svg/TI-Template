@@ -1,14 +1,11 @@
 # Task
 
-基础 preset 只提供一个静态 FreeRTOS 控制任务骨架，用于验证调度器和移植层。
+模板只提供一个 10 ms 静态 FreeRTOS 控制任务骨架，用于验证调度器、移植层和全局
+看门狗调用链，不包含具体产品 Task 或 Device/Mode 编排。
+任务名称、周期、栈深度和优先级偏移集中定义在
+[`config/core_config.h`](../config/core_config.h) 的“Task 与调度”分区。
 
-具体项目在 Task 中直接读取 Device、调用 Mode 并提交 Device 输出。当前可显式选择两个
-10 ms 循迹 profile：
-
-- `LineTrackingReadout`：UART3 查询芯流 T8，计算八路模拟量差比和，通过蓝牙输出诊断；
-  始终保持电机锁定。
-- `AnalogTracking`：芯流 T8 循迹 PID → ICM45686 yaw 角度 PID → 双轮轮速 PI；
-  KEY 启停，RGB 指示状态，蓝牙固定输出 14 列 VOFA 数据。
-
-两个 profile 互斥，基础 preset 不会自动启用。具体参数见
-[`docs/LINE_TRACKING_T8_READOUT.md`](../docs/LINE_TRACKING_T8_READOUT.md)。
+`task_app.c` 是全局 250 ms WWDT1 的唯一运行期喂狗者，只在当前
+10 ms 控制周期完整返回且 APP 健康策略满足后喂狗。禁止把喂狗移入 Tick/Idle/ISR，
+也禁止其他 Task 独立喂狗；新增关键 Task 时按
+[`docs/WATCHDOG.md`](../docs/WATCHDOG.md) 汇总当前周期健康状态。

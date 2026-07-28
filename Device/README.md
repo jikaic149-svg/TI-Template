@@ -24,7 +24,11 @@ Device/
 │     └─ LingkeM0/            棱科 M0 单轴 UART 协议驱动
 ├─ Storage/
 │  └─ Flash/                  隐藏 MCU 地址与擦写规则的持久化适配
+├─ System/
+│  └─ Watchdog/               WWDT 后端状态与单一喂狗接口
 └─ Communication/
+   ├─ Serial/                 通用缓冲 UART；蓝牙无线透传直接复用
+   ├─ LoRa/                   LoRa 定点无线串口适配
    └─ Vision/                 视觉数据包通信
 ```
 
@@ -46,4 +50,6 @@ TEMPLATE_ENABLE_DEVICE_LINGKE_M0
 TEMPLATE_ENABLE_DEVICE_POWER_SWITCH
 TEMPLATE_ENABLE_DEVICE_QD4310
 TEMPLATE_ENABLE_DEVICE_LINE_TRACKING
+TEMPLATE_ENABLE_DEVICE_SERIAL
+TEMPLATE_ENABLE_DEVICE_LORA
 ```

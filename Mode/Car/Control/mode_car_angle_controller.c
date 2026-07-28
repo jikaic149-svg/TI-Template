@@ -1,4 +1,5 @@
 #include "mode_car_control.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -31,13 +32,16 @@ Mode_Car_AngleControllerConfig
 Mode_Car_AngleController_DefaultConfig(void)
 {
     const Mode_Car_AngleControllerConfig config = {
-        .kp = 3.0F,
-        .ki = 0.05F,
-        .kd = 1.0F,
-        .integral_speed_limit = 10.0F,
-        .maximum_wheel_speed = 160.0F,
-        .angle_tolerance_deg = 0.5F,
-        .rate_tolerance_deg_per_second = 3.0F,
+        .kp = TEMPLATE_CAR_ANGLE_KP,
+        .ki = TEMPLATE_CAR_ANGLE_KI,
+        .kd = TEMPLATE_CAR_ANGLE_KD,
+        .integral_speed_limit =
+            TEMPLATE_CAR_ANGLE_INTEGRAL_SPEED_LIMIT_MM_PER_SECOND,
+        .maximum_wheel_speed =
+            TEMPLATE_CAR_ANGLE_MAXIMUM_WHEEL_SPEED_MM_PER_SECOND,
+        .angle_tolerance_deg = TEMPLATE_CAR_ANGLE_TOLERANCE_DEG,
+        .rate_tolerance_deg_per_second =
+            TEMPLATE_CAR_ANGLE_RATE_TOLERANCE_DPS,
     };
     return config;
 }

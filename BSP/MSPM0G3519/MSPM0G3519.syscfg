@@ -30,6 +30,12 @@ const LineTrackingUART = UART.addInstance();
 const SPI         = scripting.addModule("/ti/driverlib/SPI", {}, false);
 const BMI088SPI   = SPI.addInstance();
 const ICM45686SPI = SPI.addInstance();
+const WWDT        = scripting.addModule("/ti/driverlib/WWDT", {}, false);
+const SystemWatchdog = WWDT.addInstance();
+
+SystemWatchdog.$name = "SYSTEM_WATCHDOG";
+SystemWatchdog.profile = "CONFIG_PROFILE_1";
+SystemWatchdog.peripheral.$assign = "WWDT1";
 
 const pllQDivider         = system.clockTree["PLL_QDIV"];
 pllQDivider.multiplyValue = 4;

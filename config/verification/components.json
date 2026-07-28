@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "globalInputs": [
+    "CMakeLists.txt",
+    "CMakePresets.json",
+    "config/core_config.h",
+    "config/cmake",
+    "config/verification",
+    "tests/run_gcc_tests.ps1",
+    "tests/run_arm_compile.ps1",
+    "tools/project.ps1",
+    "tools/check_template.ps1",
+    "tools/lib"
+  ],
+  "contextInputs": [
+    "AGENTS.md",
+    "README.md",
+    "docs/DEVICE_PARAMETERS.md",
+    "docs/WATCHDOG.md"
+  ],
+  "components": [
+    {
+      "id": "Watchdog",
+      "description": "全局健康策略、Device 门面和两颗 MCU 的 WWDT BSP",
+      "inputs": [
+        "APP/System/Watchdog",
+        "Device/System/Watchdog",
+        "BSP/bsp_watchdog.h",
+        "BSP/MSPM0G3507/bsp_watchdog.c",
+        "BSP/MSPM0G3519/bsp_watchdog.c",
+        "tests/watchdog",
+        "docs/WATCHDOG.md"
+      ],
+      "dependencies": [],
+      "hostScopes": ["Watchdog"],
+      "armScopes": ["Watchdog"],
+      "buildPresets": [
+        "build-g3507-debug",
+        "build-g3507-release",
+        "build-g3519-debug",
+        "build-g3519-release"
+      ]
+    },
+    {
+      "id": "Communication",
+      "description": "Serial、LoRa、Vision Device 与蓝牙/LoRa 通信 Mode",
+      "inputs": [
+        "Device/Communication",
+        "Mode/Communicate",
+        "tests/lora",
+        "tests/mode_communicate"
+      ],
+      "dependencies": [],
+      "hostScopes": ["Communication"],
+      "armScopes": ["Communication"],
+      "buildPresets": []
+    },
+    {
+      "id": "IMU",
+      "description": "Mahony、双 IMU 融合以及统一和具体 IMU Device",
+      "inputs": [
+        "APP/Algorithm/Mahony",
+        "APP/Algorithm/IMUFusion",
+        "Device/Sensor/IMU",
+        "tests/imu_fusion",
+        "tests/single_imu",
+        "tests/lingke_m0"
+      ],
+      "dependencies": [],
+      "hostScopes": ["IMU"],
+      "armScopes": ["IMU"],
+      "buildPresets": []
+    },
+    {
+      "id": "Motor",
+      "description": "电机 Device、型号参数和 TB6612/AT8236 BSP 集成",
+      "inputs": [
+        "Device/Actuator/Motor",
+        "BSP/bsp_motor.h",
+        "BSP/MSPM0G3507/bsp_motor.c",
+        "BSP/MSPM0G3519/bsp_motor.c",
+        "BSP/MSPM0G3519/bsp_motor_at8236.c",
+        "tests/motor_at8236",
+        "tests/motor_tb6612",
+        "tests/motor_models"
+      ],
+      "dependencies": [],
+      "hostScopes": ["Motor"],
+      "armScopes": [],
+      "buildPresets": [
+        "build-g3519-at8236-debug",
+        "build-g3519-at8236-release"
+      ]
+    },
+    {
+      "id": "Navigation",
+      "description": "PID、车辆通用控制与融合惯导 Mode",
+      "inputs": [
+        "APP/Algorithm/PID",
+        "Mode/Car/Control",
+        "Mode/Car/Navigation",
+        "Mode/Car/Spin",
+        "Mode/Car/include",
+        "Mode/Car/src",
+        "tests/fused_navigation_mode"
+      ],
+      "dependencies": ["IMU", "Motor"],
+      "hostScopes": ["Navigation"],
+      "armScopes": [],
+      "buildPresets": []
+    },
+    {
+      "id": "LineTracking",
+      "description": "八路循迹算法、Device 与 Car Tracking Mode",
+      "inputs": [
+        "APP/Algorithm/LineTracking",
+        "Device/Sensor/LineTracking",
+        "Mode/Car/Tracking",
+        "tests/line_tracking_uart"
+      ],
+      "dependencies": ["Navigation"],
+      "hostScopes": ["LineTracking"],
+      "armScopes": [],
+      "buildPresets": []
+    },
+    {
+      "id": "Firmware",
+      "description": "模板公共胶水、BSP、Task、FreeRTOS 配置和未单列组件",
+      "inputs": [
+        "main.c",
+        "APP",
+        "BSP",
+        "Device",
+        "Mode",
+        "Task",
+        "FreeRTOS/Config"
+      ],
+      "dependencies": ["Watchdog", "Communication", "IMU", "Motor", "Navigation", "LineTracking"],
+      "hostScopes": [],
+      "armScopes": [],
+      "buildPresets": [
+        "build-g3507-debug",
+        "build-g3507-release",
+        "build-g3519-debug",
+        "build-g3519-release"
+      ]
+    }
+  ]
+}

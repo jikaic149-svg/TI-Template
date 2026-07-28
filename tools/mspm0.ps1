@@ -13,9 +13,6 @@ param(
     [ValidateSet("TB6612", "AT8236")]
     [string]$MotorDriver = "TB6612",
 
-    [ValidateSet("Default", "LineTrackingReadout", "AnalogTracking")]
-    [string]$TaskProfile = "Default",
-
     [ValidateSet("DAPLink", "XDS110")]
     [string]$Probe
 )
@@ -26,11 +23,6 @@ $ErrorActionPreference = "Stop"
 if (($Device -ne "MSPM0G3519") -and ($MotorDriver -ne "TB6612")) {
     throw "MotorDriver '$MotorDriver' is only available for MSPM0G3519."
 }
-if (($TaskProfile -ne "Default") -and
-    (($Device -ne "MSPM0G3519") -or ($MotorDriver -ne "TB6612"))) {
-    throw "$TaskProfile is only available for MSPM0G3519 + TB6612."
-}
-
 $ExpectedProbe = if ($Device -eq "MSPM0G3507") { "XDS110" } else { "DAPLink" }
 if ([string]::IsNullOrWhiteSpace($Probe)) {
     $Probe = $ExpectedProbe
@@ -417,14 +409,6 @@ function Set-IsolatedEnvironment {
 
 function Get-PresetName {
     $shortDevice = if ($Device -eq "MSPM0G3507") { "g3507" } else { "g3519" }
-    if (($Device -eq "MSPM0G3519") -and ($MotorDriver -eq "TB6612")) {
-        if ($TaskProfile -eq "LineTrackingReadout") {
-            return "$shortDevice-tb6612-line-readout-$($Configuration.ToLowerInvariant())"
-        }
-        if ($TaskProfile -eq "AnalogTracking") {
-            return "$shortDevice-tb6612-analog-tracking-$($Configuration.ToLowerInvariant())"
-        }
-    }
     if (($Device -eq "MSPM0G3519") -and ($MotorDriver -eq "AT8236")) {
         return "$shortDevice-at8236-$($Configuration.ToLowerInvariant())"
     }
@@ -433,16 +417,6 @@ function Get-PresetName {
 
 function Get-BuildDirectory {
     $deviceDirectory = if (($Device -eq "MSPM0G3519") -and
-        ($MotorDriver -eq "TB6612") -and
-        ($TaskProfile -eq "LineTrackingReadout")) {
-        "MSPM0G3519-TB6612-LineReadout"
-    }
-    elseif (($Device -eq "MSPM0G3519") -and
-        ($MotorDriver -eq "TB6612") -and
-        ($TaskProfile -eq "AnalogTracking")) {
-        "MSPM0G3519-TB6612-AnalogTracking"
-    }
-    elseif (($Device -eq "MSPM0G3519") -and
         ($MotorDriver -eq "AT8236")) {
         "MSPM0G3519-AT8236"
     }
@@ -569,14 +543,8 @@ elseif ($Action -eq "SysConfig") {
     "[MSPM0] {0} | {1}" -f $Action.ToUpperInvariant(), $Device
 }
 elseif ($Device -eq "MSPM0G3519") {
-    if (($MotorDriver -eq "TB6612") -and ($TaskProfile -ne "Default")) {
-        "[MSPM0] {0} | {1} | {2} | {3} | {4}" -f $Action.ToUpperInvariant(),
-            $Device, $Configuration, $MotorDriver, $TaskProfile
-    }
-    else {
-        "[MSPM0] {0} | {1} | {2} | {3}" -f $Action.ToUpperInvariant(),
-            $Device, $Configuration, $MotorDriver
-    }
+    "[MSPM0] {0} | {1} | {2} | {3}" -f $Action.ToUpperInvariant(),
+        $Device, $Configuration, $MotorDriver
 }
 else {
     "[MSPM0] {0} | {1} | {2}" -f $Action.ToUpperInvariant(), $Device, $Configuration

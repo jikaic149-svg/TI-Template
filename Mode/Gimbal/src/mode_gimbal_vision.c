@@ -1,4 +1,5 @@
 #include "mode_gimbal_internal.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -150,45 +151,73 @@ Mode_Gimbal_VisionStabConfig Mode_Gimbal_VisionStab_DefaultConfig(void)
     Mode_Gimbal_VisionStabConfig config;
 
     config.stabilization = Mode_Gimbal_GimbalStab_DefaultConfig();
-    config.nominal_control_period_seconds = 0.010F;
-    config.input_timeout_ms = 250U;
-    config.maximum_dx_pixels = 180.0F;
-    config.maximum_dy_pixels = 140.0F;
-    config.yaw_deadband_pixels = 2.0F;
-    config.pitch_deadband_pixels = 2.0F;
-    config.yaw_integral_deadband_pixels = 1.0F;
-    config.pitch_integral_deadband_pixels = 1.0F;
-    config.center_integral_decay = 0.90F;
-    config.reversal_integral_decay = 0.50F;
-    config.input_filter_alpha = 0.72F;
-    config.yaw_pixel_polarity = 1.0F;
-    config.pitch_pixel_polarity = 1.0F;
+    config.nominal_control_period_seconds =
+        TEMPLATE_GIMBAL_VISION_NOMINAL_CONTROL_PERIOD_SECONDS;
+    config.input_timeout_ms = TEMPLATE_GIMBAL_VISION_INPUT_TIMEOUT_MS;
+    config.maximum_dx_pixels = TEMPLATE_GIMBAL_VISION_MAXIMUM_DX_PIXELS;
+    config.maximum_dy_pixels = TEMPLATE_GIMBAL_VISION_MAXIMUM_DY_PIXELS;
+    config.yaw_deadband_pixels =
+        TEMPLATE_GIMBAL_VISION_YAW_DEADBAND_PIXELS;
+    config.pitch_deadband_pixels =
+        TEMPLATE_GIMBAL_VISION_PITCH_DEADBAND_PIXELS;
+    config.yaw_integral_deadband_pixels =
+        TEMPLATE_GIMBAL_VISION_YAW_INTEGRAL_DEADBAND_PIXELS;
+    config.pitch_integral_deadband_pixels =
+        TEMPLATE_GIMBAL_VISION_PITCH_INTEGRAL_DEADBAND_PIXELS;
+    config.center_integral_decay =
+        TEMPLATE_GIMBAL_VISION_CENTER_INTEGRAL_DECAY;
+    config.reversal_integral_decay =
+        TEMPLATE_GIMBAL_VISION_REVERSAL_INTEGRAL_DECAY;
+    config.input_filter_alpha = TEMPLATE_GIMBAL_VISION_INPUT_FILTER_ALPHA;
+    config.yaw_pixel_polarity =
+        TEMPLATE_GIMBAL_VISION_YAW_PIXEL_POLARITY;
+    config.pitch_pixel_polarity =
+        TEMPLATE_GIMBAL_VISION_PITCH_PIXEL_POLARITY;
 
-    config.normal_yaw.kp = 0.00018F;
-    config.normal_yaw.ki_per_nominal_step = 0.000002F;
-    config.normal_yaw.kd_per_nominal_step = 0.0F;
-    config.normal_yaw.integral_limit = 0.004F;
-    config.normal_yaw.maximum_step_deg = 0.010F;
-    config.normal_pitch.kp = 0.00018F;
-    config.normal_pitch.ki_per_nominal_step = 0.000003F;
-    config.normal_pitch.kd_per_nominal_step = 0.0F;
-    config.normal_pitch.integral_limit = 0.006F;
-    config.normal_pitch.maximum_step_deg = 0.012F;
+    config.normal_yaw.kp = TEMPLATE_GIMBAL_VISION_NORMAL_YAW_KP;
+    config.normal_yaw.ki_per_nominal_step =
+        TEMPLATE_GIMBAL_VISION_NORMAL_YAW_KI_PER_STEP;
+    config.normal_yaw.kd_per_nominal_step =
+        TEMPLATE_GIMBAL_VISION_NORMAL_YAW_KD_PER_STEP;
+    config.normal_yaw.integral_limit =
+        TEMPLATE_GIMBAL_VISION_NORMAL_YAW_INTEGRAL_LIMIT;
+    config.normal_yaw.maximum_step_deg =
+        TEMPLATE_GIMBAL_VISION_NORMAL_YAW_MAXIMUM_STEP_DEG;
+    config.normal_pitch.kp = TEMPLATE_GIMBAL_VISION_NORMAL_PITCH_KP;
+    config.normal_pitch.ki_per_nominal_step =
+        TEMPLATE_GIMBAL_VISION_NORMAL_PITCH_KI_PER_STEP;
+    config.normal_pitch.kd_per_nominal_step =
+        TEMPLATE_GIMBAL_VISION_NORMAL_PITCH_KD_PER_STEP;
+    config.normal_pitch.integral_limit =
+        TEMPLATE_GIMBAL_VISION_NORMAL_PITCH_INTEGRAL_LIMIT;
+    config.normal_pitch.maximum_step_deg =
+        TEMPLATE_GIMBAL_VISION_NORMAL_PITCH_MAXIMUM_STEP_DEG;
 
-    config.circle_yaw.kp = 0.00024F;
-    config.circle_yaw.ki_per_nominal_step = 0.0000012F;
-    config.circle_yaw.kd_per_nominal_step = 0.000030F;
-    config.circle_yaw.integral_limit = 0.009F;
-    config.circle_yaw.maximum_step_deg = 0.022F;
-    config.circle_pitch.kp = 0.00027F;
-    config.circle_pitch.ki_per_nominal_step = 0.0000018F;
-    config.circle_pitch.kd_per_nominal_step = 0.000052F;
-    config.circle_pitch.integral_limit = 0.014F;
-    config.circle_pitch.maximum_step_deg = 0.028F;
+    config.circle_yaw.kp = TEMPLATE_GIMBAL_VISION_CIRCLE_YAW_KP;
+    config.circle_yaw.ki_per_nominal_step =
+        TEMPLATE_GIMBAL_VISION_CIRCLE_YAW_KI_PER_STEP;
+    config.circle_yaw.kd_per_nominal_step =
+        TEMPLATE_GIMBAL_VISION_CIRCLE_YAW_KD_PER_STEP;
+    config.circle_yaw.integral_limit =
+        TEMPLATE_GIMBAL_VISION_CIRCLE_YAW_INTEGRAL_LIMIT;
+    config.circle_yaw.maximum_step_deg =
+        TEMPLATE_GIMBAL_VISION_CIRCLE_YAW_MAXIMUM_STEP_DEG;
+    config.circle_pitch.kp = TEMPLATE_GIMBAL_VISION_CIRCLE_PITCH_KP;
+    config.circle_pitch.ki_per_nominal_step =
+        TEMPLATE_GIMBAL_VISION_CIRCLE_PITCH_KI_PER_STEP;
+    config.circle_pitch.kd_per_nominal_step =
+        TEMPLATE_GIMBAL_VISION_CIRCLE_PITCH_KD_PER_STEP;
+    config.circle_pitch.integral_limit =
+        TEMPLATE_GIMBAL_VISION_CIRCLE_PITCH_INTEGRAL_LIMIT;
+    config.circle_pitch.maximum_step_deg =
+        TEMPLATE_GIMBAL_VISION_CIRCLE_PITCH_MAXIMUM_STEP_DEG;
 
-    config.lost_scan_delay_ms = 500U;
-    config.lost_scan_half_span_deg = 45.0F;
-    config.lost_scan_rate_deg_per_second = 8.0F;
+    config.lost_scan_delay_ms =
+        TEMPLATE_GIMBAL_VISION_LOST_SCAN_DELAY_MS;
+    config.lost_scan_half_span_deg =
+        TEMPLATE_GIMBAL_VISION_LOST_SCAN_HALF_SPAN_DEG;
+    config.lost_scan_rate_deg_per_second =
+        TEMPLATE_GIMBAL_VISION_LOST_SCAN_RATE_DPS;
     return config;
 }
 

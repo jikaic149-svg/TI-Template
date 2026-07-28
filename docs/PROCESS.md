@@ -1,5 +1,74 @@
 # 工程变更记录
 
+## 2026-07-28：核心整定参数集中到单一分类配置
+
+- 修改原因：用户要求把 PID、Kalman、滤波以及常调的 Task 周期/优先级/栈、阈值、
+  限幅和超时汇总到 `config/`，配置必须有注释和分类，同时明确不要按算法或模块拆得
+  过细；同一要求还需固化到嵌入式工作流 skill。
+- 最终决策：新增单一 `config/core_config.h`，在文件内按 Task、车辆控制、循迹、云台、
+  Mahony、双 IMU 融合/Kalman 六个大类分区。现有默认配置函数直接消费这些宏，所有
+  既有数值和启用状态保持不变；特别保留导航 slip gate 默认关闭。通用一维 Kalman 和
+  Filter API 没有业务默认值，继续由调用方显式传参，不创建未使用的空参数表。固定
+  公式、公共 API 结构容量、协议常量、寄存器值、引脚/时钟和构建开关继续留在原 owner。
+- Skill 规则：`embedded-firmware-workflow` 新增“核心参数与配置”约束，要求少量配置
+  文件、按 owner/领域分区、注释用途/单位/约束/影响、默认函数消费单一真值，并禁止
+  未使用占位参数和破坏硬件/FreeRTOS/Device/CMake 的事实边界。
+- 涉及文件：`config/core_config.h` 与说明/验证映射，Task、Car/Gimbal Mode、
+  LineTracking/Mahony/IMUFusion Algorithm 的默认配置入口和私有 include 路径，以及
+  对应 README、测试脚本和本记录；未新增产品 Task、状态机或保护逻辑。
+- 验证方式和结果：全部 host GCC 测试、Cortex-M0+ 严格编译、模板架构检查和
+  `git diff --check` 通过；启用 Car、Gimbal、LineTracking、BMI088 和 ICM45686 的
+  G3519 Debug/Release 均完成 SysConfig 生成、ARM 编译和完整链接。Skill 经
+  skill-creator `quick_validate.py` 校验通过。
+- 已知限制：本次只验证 host、ARM 编译和完整链接，未烧录或执行实物参数整定；
+  配置迁移不代表这些通用默认值已经适配任一具体机械系统。
+
+## 2026-07-28：从通用模板删除循迹产品 Task
+
+- 修改原因：用户确认通用 Template 不应自带 `LineTrackingReadout` 和
+  `AnalogTracking` 产品任务，明确要求直接删除。
+- 最终决策：删除 `Task/LineTracking` 及专用接入文档，移除两个 Product Task CMake
+  选项、四组循迹 configure/build preset 和 `mspm0.ps1 -TaskProfile` 入口。模板只保留
+  10 ms 静态 `Task_Control` 骨架及其全局看门狗唯一喂狗职责；同步删除仅服务于产品
+  Task 的输出许可、锁定和 Mode 故障调试全局量。通用控制 Task 的名称、周期、栈深度
+  和优先级偏移集中到 `config/task_config.h`。可复用的 LineTracking Algorithm、Device、
+  Car Tracking Mode、参数事实和 host 测试继续保留，由具体产品自行编排。
+- 涉及文件：`Task`、根 CMake/presets、`tools/mspm0.ps1`、验证组件清单、架构检查配置
+  白名单、根/Task/Watchdog/XinliuT8/config 文档；历史记录不改写。
+- 验证方式和结果：全部 host 测试、Cortex-M0+ 严格编译、模板架构检查和
+  `git diff --check` 通过；剩余 6 个 G3507/G3519 TB6612/AT8236 Debug/Release preset
+  均以 `--fresh` 配置，完成 TI SysConfig 生成、ARM 编译和完整链接。
+- 已知限制：本次未烧录或执行实物验证；删除后模板不再提供 T8 查询、循迹遥测或电机
+  循迹产品行为。
+- 待确认事项：后续产品如需循迹，应在具体产品工程新增 Task 编排，不再把产品 Task
+  回填通用模板。
+
+## 2026-07-27：加入全局 WWDT1 健康监督链路
+
+- 修改原因：用户要求模板提供全局硬件看门狗，并确认 APP 负责全局健康策略，后续
+  合作者必须能明确看到唯一喂狗者和硬件分层约束。
+- 最终决策：G3507/G3519 三份 SysConfig 均启用应用级 WWDT1，LFCLK 32.768 kHz、
+  除以 8、`2^10` 计数、250 ms、0% closed window、睡眠继续计数；BSP 初始化把
+  Core Halt 行为设为 STOP。`APP/System/Watchdog` 只做 required/completed 位掩码
+  判定，`Task/task_app.c` 是唯一喂狗决策者，调用经 `Device/System/Watchdog` 到 BSP。
+  控制周期完整返回即代表执行仍推进，Mode 安全故障不会造成无意义复位循环。
+- 架构约束：APP 不依赖 MCU/Device/RTOS，Task 不绕过 Device；架构检查新增唯一
+  喂狗者规则，禁止其他 Task、Mode、ISR 或 Device 旁路喂狗。完整扩展说明写入
+  `docs/WATCHDOG.md`，根目录及 APP/BSP/Device/Task README 均建立入口。
+- 涉及文件：`APP/System/Watchdog`、`Device/System/Watchdog`、两套 BSP 的
+  SysConfig/resource map/manifest/init/watchdog backend、`Task/task_app.c`、根 CMake、
+  DriverLib manifest、host/ARM 测试、架构检查和文档。
+- 验证方式和结果：APP Watchdog host 单元测试、全部 host 回归、Cortex-M0+ 严格
+  编译和模板架构检查通过。10 个正式 preset 均以 `--fresh` 重新生成 SysConfig 并
+  完整链接通过；生成代码确认 WWDT1 为 250 ms、Window0/1 关闭、睡眠继续计数。
+  AnalogTracking Debug/Release 的 text/data/bss 为 `51488/5412/7212`、
+  `49168/5412/7212`。
+- 已知限制：尚未上板故意停止喂狗测量 250 ms 复位和复位原因；WWDT 在超时前不能
+  立即关闭电机，也不能发现仍在运行的控制逻辑错误。TB6612 STBY 复位期间的默认
+  安全状态仍需确认硬件下拉，致命异常立即拉低 STBY 需要独立保护路径。
+- 待确认事项：实物测试初始化到首次喂狗小于 250 ms、调试暂停不复位、停止喂狗后
+  WWDT1 产生 SYSRST，以及复位期间 TB6612 输出确实失能。
+
 ## 2026-07-27：分离模拟循迹产品配置与 Task 控制流程
 
 - 修改原因：模拟循迹 Task 原先把设备逻辑索引、机械参数、已验证方向和控制参数直接
@@ -228,3 +297,35 @@
   调用链预留栈余量，并上板检查高水位。
 - 待确认事项：产品调用方仍需配置两颗 IMU 的安装轴、相对位置、采样周期、有效状态及
   可选轮速静止判据，再进行实车参数验证。
+
+## 2026-07-27：同步蓝牙透传策略与 LoRa 半双工通信组件
+
+- 修改原因：用户要求把当前 `test` 中已验证的 LoRa 和蓝牙无线透传能力同步回中央模板，
+  并确认 LoRa 不应绑定某一颗 MCU。
+- 最终决策：模板既有 `Device_Serial` 与来源工程逐字一致，继续作为普通蓝牙无线透传的
+  非阻塞 UART Device，不新增无协议意义的 Bluetooth Device。Bluetooth PC/双 MCU Mode
+  输出新增 `duplex_policy=UNRESTRICTED`，只表示软件不互斥 TX/RX，不宣称无线 PHY 已
+  验证物理全双工。新增 `Device_LoRa`，按实测格式原子发送
+  `[目标地址高][目标地址低][目标信道]+payload`，并透明接收字节流；新增纯
+  `Mode_Communicate_LoRaHalfDuplex` 管理互补轮次。LoRa 选项自动带入 Device_Serial。
+  没有同步双板测试 Task、产品消息协议、默认 preset、ACK、超时重发或自动恢复。
+- 硬件与身份边界：已登记模块地址 `0x7302/0x1007`、信道 `0x4A/0x30`、115200 8N1、
+  空口参数和定点路由头。模块地址属于 LoRa 模块内部配置，不属于 MCU、开发板或
+  DAPLink；换板只需让产品 `local_side` 与所接模块地址一致，并提供满足能力的 UART
+  transport。G3519 PB10/PB11 是已实测映射，不是通用 Device 的固定依赖。
+- 涉及文件：`Device/Communication/LoRa`、既有 Serial 说明、`Mode/Communicate`、根/
+  Device CMake 与 Presets、对应 host/ARM 测试、设备参数和本记录。模板既有 Watchdog、
+  BSP/SysConfig、Task 周期、产品状态机和默认启动行为未修改。
+- 验证方式和结果：LoRa Device、Bluetooth/LoRa Communicate Mode 及模板全部 host 回归
+  通过；Cortex-M0+ `-Wall -Wextra -Wpedantic -Werror` 严格编译和架构检查通过。显式
+  打开 LoRa+Communicate 的 G3519 Debug/Release 完整构建成功，确认 Serial、LoRa 和
+  三个通信 Mode 源进入编译链，Flash/SRAM 分别为 `17736/9256 B` 和
+  `17264/9248 B`。原 AnalogTracking Debug/Release 回归构建通过，证明既有蓝牙调用
+  兼容，Flash/SRAM 分别为 `56816/12616 B` 和 `54512/12616 B`。LoRa 核心源码和
+  host 测试与来源工程规范化内容一致；来源工程此前已完成双板空口连续序号/CRC 实测，
+  本次模板未重复烧录。
+- 已知限制：`Device_LoRa_Send()` 的 `OK` 只代表 UART 接受完整数据；Mode 没有 ACK、
+  重发、超时或失步恢复，任一轮次消息丢失会停在等待。模块完整型号、最大 RF 单包、
+  VCC 和 AUX/空口完成语义仍未知。
+- 待确认事项：具体产品接入时定义消息边界、最大 payload、两端初始轮次和所需可靠性；
+  模块换接板卡后按实际模块地址更新 `local_side`，不要按 MCU 或探针串号猜测。

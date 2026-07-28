@@ -1,6 +1,9 @@
 # Device drivers are opt-in targets selected by a profile.
 # Each driver depends on BSP interfaces, never on MCU registers directly.
 
+# The system watchdog is a global safety service used by every product Task.
+add_subdirectory(System/Watchdog)
+
 if(TEMPLATE_ENABLE_DEVICE_KEY)
     add_subdirectory(Input/Key)
 endif()
@@ -56,8 +59,11 @@ endif()
 if(TEMPLATE_ENABLE_DEVICE_VISION)
     add_subdirectory(Communication/Vision)
 endif()
-if(TEMPLATE_ENABLE_DEVICE_SERIAL)
+if(TEMPLATE_BUILD_DEVICE_SERIAL)
     add_subdirectory(Communication/Serial)
+endif()
+if(TEMPLATE_ENABLE_DEVICE_LORA)
+    add_subdirectory(Communication/LoRa)
 endif()
 if(TEMPLATE_ENABLE_DEVICE_FLASH)
     add_subdirectory(Storage/Flash)

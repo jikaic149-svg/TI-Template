@@ -1,4 +1,5 @@
 #include "mode_car_internal.h"
+#include "core_config.h"
 
 #include <float.h>
 #include <math.h>
@@ -7,9 +8,10 @@
 Mode_Car_BrakeConfig Mode_Car_Brake_DefaultConfig(void)
 {
     const Mode_Car_BrakeConfig config = {
-        .stopped_speed_threshold = 10.0F,
-        .stable_time_seconds = 0.025F,
-        .timeout_ms = 500U,
+        .stopped_speed_threshold =
+            TEMPLATE_CAR_BRAKE_STOPPED_SPEED_THRESHOLD,
+        .stable_time_seconds = TEMPLATE_CAR_BRAKE_STABLE_TIME_SECONDS,
+        .timeout_ms = TEMPLATE_CAR_BRAKE_TIMEOUT_MS,
     };
     return config;
 }

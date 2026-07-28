@@ -33,7 +33,7 @@ option(TEMPLATE_ENABLE_MODE_GIMBAL
     "Compile the reusable two-axis gimbal modes"
     OFF)
 option(TEMPLATE_ENABLE_MODE_COMMUNICATE
-    "Compile the Bluetooth PC/dual-MCU communication policies"
+    "Compile the Bluetooth and LoRa communication policies"
     OFF)
 option(TEMPLATE_ENABLE_ALGORITHM_SPSC_RING
     "Compile the RTOS-independent SPSC byte ring component"
@@ -116,14 +116,11 @@ option(TEMPLATE_ENABLE_DEVICE_IMU
 option(TEMPLATE_ENABLE_DEVICE_SERIAL
     "Compile the generic buffered serial Device"
     OFF)
+option(TEMPLATE_ENABLE_DEVICE_LORA
+    "Compile the fixed-route LoRa wireless serial Device"
+    OFF)
 option(TEMPLATE_ENABLE_DEVICE_FLASH
     "Compile the persistent DATA-Flash Device adapter"
-    OFF)
-option(TEMPLATE_ENABLE_TASK_LINE_TRACKING_READOUT
-    "Build the read-only Xinliu T8 analog line-tracking Task"
-    OFF)
-option(TEMPLATE_ENABLE_TASK_ANALOG_TRACKING
-    "Build the TB6612 + ICM45686 + Xinliu T8 analog-tracking Task"
     OFF)
 
 # Resolve only the transitive modules that an explicitly selected feature
@@ -157,6 +154,8 @@ set(TEMPLATE_BUILD_DEVICE_QD4310
     "${TEMPLATE_ENABLE_DEVICE_QD4310}")
 set(TEMPLATE_BUILD_DEVICE_LINE_TRACKING
     "${TEMPLATE_ENABLE_DEVICE_LINE_TRACKING}")
+set(TEMPLATE_BUILD_DEVICE_SERIAL
+    "${TEMPLATE_ENABLE_DEVICE_SERIAL}")
 if(TEMPLATE_ENABLE_DEVICE_BMI088 OR TEMPLATE_ENABLE_DEVICE_ICM45686)
     set(TEMPLATE_BUILD_DEVICE_IMU ON)
 endif()
@@ -169,6 +168,9 @@ endif()
 if(TEMPLATE_ENABLE_DEVICE_VISION)
     set(TEMPLATE_BUILD_ALGORITHM_PACKET ON)
     set(TEMPLATE_BUILD_ALGORITHM_RELIABLE_LINK ON)
+endif()
+if(TEMPLATE_ENABLE_DEVICE_LORA)
+    set(TEMPLATE_BUILD_DEVICE_SERIAL ON)
 endif()
 if(TEMPLATE_BUILD_ALGORITHM_RELIABLE_LINK)
     set(TEMPLATE_BUILD_ALGORITHM_PACKET ON)
@@ -359,6 +361,7 @@ endif()
 add_dependencies(bsp generate_bsp_config)
 
 add_subdirectory(APP/Algorithm)
+add_subdirectory(APP/System/Watchdog)
 add_subdirectory(Device)
 
 if(TEMPLATE_ENABLE_MODE_CAR)

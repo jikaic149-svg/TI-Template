@@ -6,19 +6,24 @@
 ## 默认行为
 
 - FreeRTOS V11.3.0 始终编译，并提供静态控制 Task 骨架。
+- G3507/G3519 的 WWDT1 始终启用，周期 250 ms；只有控制 Task 完整返回并通过
+  APP 全局健康判定后才喂狗。
 - 具体项目由 Task 直接读取 Device、调用 Mode，再提交 Device 输出。
-- 基础 preset 不运行具体产品逻辑；循迹产品 Task 只在专用 preset 中显式启用。
+- 模板不提供或运行具体产品 Task。
 - 电机及其他可能产生运动的输出不在基础模板中初始化。
 - G3519 的 UART4 蓝牙口（PB10/PB11，115200，RX DMA_CH2）由 BSP 初始化；
-  G3519 preset 同时编译 `Device_Serial`，但不擅自发送任何业务数据。
+  G3519 preset 同时编译 `Device_Serial`，可供普通蓝牙无线透传使用，但不擅自发送
+  任何业务数据。LoRa 可复用同一 UART，具体产品只能二选一连接。
 - G3519 的 UART3（PC6 TX、PC7 RX，115200 8N1）预留给芯流 T8；基础 preset
-  不查询传感器，只有循迹专用 preset 使用它。
+  不查询传感器，具体产品按需接入。
 
 ## 目录
 
 ```text
 TI Template/
 ├─ APP/                       与硬件无关的算法组件
+│  ├─ Algorithm/              数学、控制和协议算法
+│  └─ System/Watchdog/        MCU 无关的全局健康判定
 ├─ BSP/
 │  ├─ *.h                     与 MCU 无关的 BSP 接口
 │  ├─ MSPM0G3507/             G3507 SysConfig、实现和 DriverLib 清单
@@ -49,18 +54,23 @@ TI Template/
 │  ├─ Storage/
 │  │  └─ Flash/               DATA-Flash 持久化适配
 │  └─ Communication/
+│     ├─ Serial/              通用缓冲 UART；蓝牙透传直接复用
+│     ├─ LoRa/                LoRa 定点无线串口适配
 │     └─ Vision/              独占 UART 上层的可靠视觉通信
 ├─ FreeRTOS/
 │  ├─ Config/                 FreeRTOS 配置和移植支持
 │  └─ Kernel/                 FreeRTOS Kernel V11.3.0
 ├─ Mode/Car/                  六个通用车辆 Mode
 ├─ Mode/Gimbal/               云台正式 Mode 与 Scheduler
+├─ Mode/Communicate/          Bluetooth 策略与 LoRa 半双工轮次
 ├─ main.c                     初始化并启动 FreeRTOS
-├─ Task/                      FreeRTOS 周期任务和 Device/Mode 搬运
+├─ Task/                      静态控制 Task 和全局看门狗喂狗入口
 ├─ tests/                     纯软件主机测试与 Cortex-M0+ 严格编译
 ├─ config/                    参与构建和调试的声明式配置
+│  ├─ core_config.h          分类汇总的核心可调参数
 │  ├─ cmake/                 工具链和 DriverLib 模块映射
-│  └─ openocd/               DAPLink/XDS110 OpenOCD 配置
+│  ├─ openocd/               DAPLink/XDS110 OpenOCD 配置
+│  └─ verification/          增量验证组件清单
 ├─ docs/                      决策、审计、工具锁定和验证记录
 ├─ tools/                     构建、烧录和 SysConfig 脚本
 ├─ vision/
@@ -69,6 +79,10 @@ TI Template/
 ├─ LICENSE                    模板自有新代码的 MIT 许可证
 └─ .vscode/                   VS Code 构建与调试配置
 ```
+
+看门狗分层、唯一喂狗者约束、后续增加关键 Task 的步骤及安全边界见
+[`docs/WATCHDOG.md`](docs/WATCHDOG.md)。WWDT 只解决执行停止，不能替代致命异常
+立即拉低电机 STBY，也不能发现仍在运行的控制逻辑错误。
 
 ## 构建
 
@@ -86,29 +100,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\mspm0.ps1 `
   -Action Build -Device MSPM0G3519 -Configuration Debug -MotorDriver AT8236
 ```
 
-构建芯流 T8 只读或模拟循迹三级串级 profile：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\mspm0.ps1 `
-  -Action Build -Device MSPM0G3519 -Configuration Debug `
-  -MotorDriver TB6612 -TaskProfile LineTrackingReadout
-
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\mspm0.ps1 `
-  -Action Build -Device MSPM0G3519 -Configuration Debug `
-  -MotorDriver TB6612 -TaskProfile AnalogTracking
-```
-
-十套 preset：
+六套 preset：
 
 ```text
 g3507-debug
 g3507-release
 g3519-debug
 g3519-release
-g3519-tb6612-line-readout-debug
-g3519-tb6612-line-readout-release
-g3519-tb6612-analog-tracking-debug
-g3519-tb6612-analog-tracking-release
 g3519-at8236-debug
 g3519-at8236-release
 ```
@@ -131,7 +129,8 @@ MCU/配置的整个构建目录，用于从零重新配置。
 
 Algorithm 与 Device 默认关闭，只有显式打开对应选项时才进入编译链：
 
-- Mode：`TEMPLATE_ENABLE_MODE_CAR`、`TEMPLATE_ENABLE_MODE_GIMBAL`。
+- Mode：`TEMPLATE_ENABLE_MODE_CAR`、`TEMPLATE_ENABLE_MODE_GIMBAL`、
+  `TEMPLATE_ENABLE_MODE_COMMUNICATE`。
 
 - Algorithm：`TEMPLATE_ENABLE_ALGORITHM_PID`、
   `TEMPLATE_ENABLE_ALGORITHM_FILTER`、`TEMPLATE_ENABLE_ALGORITHM_MAHONY`、
@@ -146,14 +145,13 @@ Algorithm 与 Device 默认关闭，只有显式打开对应选项时才进入�
   `TEMPLATE_ENABLE_DEVICE_BMI088`、`TEMPLATE_ENABLE_DEVICE_ICM45686`、
   `TEMPLATE_ENABLE_DEVICE_IMU`、`TEMPLATE_ENABLE_DEVICE_VISION`、
   `TEMPLATE_ENABLE_DEVICE_LINE_TRACKING`、`TEMPLATE_ENABLE_DEVICE_XINLIU_T8`、
+  `TEMPLATE_ENABLE_DEVICE_SERIAL`、`TEMPLATE_ENABLE_DEVICE_LORA`、
   `TEMPLATE_ENABLE_DEVICE_QD4310`、`TEMPLATE_ENABLE_DEVICE_FLASH`。
-- Product Task：`TEMPLATE_ENABLE_TASK_LINE_TRACKING_READOUT`、
-  `TEMPLATE_ENABLE_TASK_ANALOG_TRACKING`，两者互斥。
 
 设置时在选项名后加 `=ON`。CMake 只自动带入被选模块必需的传递依赖，例如
 具体 ICM-45686 或 BMI088 会带入统一 Device_IMU 与 Mahony，两颗同时启用会额外
-带入 IMUFusion；Vision 带入 ReliableLink/Packet，Car Mode 带入 PID；不会把整个
-Algorithm 或 Device 目录全部编译。
+带入 IMUFusion；Vision 带入 ReliableLink/Packet，LoRa 带入 Device_Serial，Car Mode
+带入 PID；不会把整个 Algorithm 或 Device 目录全部编译。
 
 各模块保留 host 测试源码和 ARM 编译脚本；当前电脑已经可以直接编译并运行
 host 测试，同时继续用 Cortex-M0+ 严格编译检查目标端兼容性，不需要关闭或绕过
@@ -210,9 +208,6 @@ StreamBuffer 和 trace；需要时通过 `TEMPLATE_FREERTOS_USE_*` 选项显式�
 g_TASK_Heartbeat
 g_TASK_Fault
 g_TASK_Ready
-g_TASK_MotorLocked
-g_TASK_OutputEnabled
-g_TASK_ModeFault
 g_TASK_UpdateCount
 g_TASK_NowMs
 ```

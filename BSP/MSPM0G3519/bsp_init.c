@@ -3,9 +3,11 @@
 #include "bsp_internal.h"
 #include "bsp_led.h"
 #include "bsp_rgb.h"
+#include "bsp_watchdog.h"
 
 void BSP_Init(void)
 {
+    (void)BSP_Watchdog_Init();
     BSP_PWM_Init();
     BSP_Motor_Init();
     BSP_Encoder_Init();

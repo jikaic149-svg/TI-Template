@@ -1,4 +1,5 @@
 #include "algorithm_line_tracking.h"
+#include "core_config.h"
 
 #include <float.h>
 #include <math.h>
@@ -23,9 +24,11 @@ static float clamp_value(float value, float minimum, float maximum)
 Algorithm_LineTracking_Config Algorithm_LineTracking_DefaultConfig(void)
 {
     const Algorithm_LineTracking_Config config = {
-        .denominator_epsilon = 0.02F,
-        .difference_weight = 0.70F,
-        .low_pass_time_constant_seconds = 0.015F,
+        .denominator_epsilon =
+            TEMPLATE_LINE_ESTIMATOR_DENOMINATOR_EPSILON,
+        .difference_weight = TEMPLATE_LINE_ESTIMATOR_DIFFERENCE_WEIGHT,
+        .low_pass_time_constant_seconds =
+            TEMPLATE_LINE_ESTIMATOR_LOW_PASS_TIME_CONSTANT_SECONDS,
     };
     return config;
 }

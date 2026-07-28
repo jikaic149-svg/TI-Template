@@ -15,6 +15,7 @@ BSP/
 ├─ bsp_pwm.h                  0..10000 PWM
 ├─ bsp_motor.h                方向 + PWM 的普通电机输出
 ├─ bsp_encoder.h              编码器累计值和增量
+├─ bsp_watchdog.h             WWDT 运行状态与唯一喂狗后端
 ├─ bsp_uart.h                 UART blocking / 可选 DMA
 ├─ bsp_can.h                  Classic CAN / CAN FD 公共帧接口
 ├─ bsp_line_sensor.h          数字/模拟循迹采样接口
@@ -38,6 +39,10 @@ BSP/
 2. 换引脚时只修改对应 MCU 的 `.syscfg` 和 `bsp_resource_map.h`。
 3. 新外设的实际实现放在 `MSPM0G3507/` 或 `MSPM0G3519/`。
 4. 没配置的外设由 `bsp_not_configured.c` 返回零资源/失败，不猜引脚。
+
+WWDT 是无引脚的 MCU 系统资源。G3507/G3519 均由 SysConfig 分配 `WWDT1`，周期
+250 ms；BSP 只提供后端，禁止 APP、Mode 或普通 Task 绕过全局健康策略直接喂狗。
+完整所有权和扩展规则见 [`docs/WATCHDOG.md`](../docs/WATCHDOG.md)。
 
 当前暂不启用 CAN。公共 CAN API 已建立，但两个 BSP 的
 `BSP_RESOURCE_HAS_CAN` 均保持 `0`；G3519 SysConfig 暂不生成 MCAN 初始化，
@@ -63,6 +68,7 @@ PA12/PA13 暂未分配。
 | Power switch 1 | PB26 | 受控 5 V，高电平使能 |
 | Buzzer | PA7 GPIO | 初始低电平；通过 `BSP_Buzzer_*` 控制 |
 | CANFD0 | 暂未分配 | 当前不启用 CAN；实现 BSP backend 后再恢复 PinMux |
+| System watchdog | WWDT1，无引脚 | 250 ms，睡眠继续计数，调试暂停时停止 |
 
 蓝牙串口使用 UART4、115200 baud；SysConfig 与上层 Device 配置必须保持
 相同波特率。灰度模块后端每次读取 8 bit，

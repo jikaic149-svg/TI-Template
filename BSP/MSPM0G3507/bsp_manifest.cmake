@@ -7,9 +7,11 @@ set(BSP_SOURCES
     "${BSP_DIR}/bsp_encoder.c"
     "${BSP_DIR}/bsp_led.c"
     "${BSP_DIR}/bsp_rgb.c"
-    "${BSP_DIR}/bsp_time.c")
+    "${BSP_DIR}/bsp_time.c"
+    "${BSP_DIR}/bsp_watchdog.c")
 
 set(BSP_DRIVERLIB_MODULES
     common
     gpio
-    timer)
+    timer
+    wwdt)

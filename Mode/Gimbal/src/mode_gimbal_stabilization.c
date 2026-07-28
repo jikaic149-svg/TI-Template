@@ -1,4 +1,5 @@
 #include "mode_gimbal_internal.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -28,7 +29,7 @@ Mode_Gimbal_StabCalibConfig Mode_Gimbal_StabCalib_DefaultConfig(void)
 
     config.pitch_loop = Mode_Gimbal_AngleLoop_DefaultPitchConfig();
     config.yaw_loop = Mode_Gimbal_AngleLoop_DefaultYawConfig();
-    config.feedback_timeout_ms = 100U;
+    config.feedback_timeout_ms = TEMPLATE_GIMBAL_FEEDBACK_TIMEOUT_MS;
     return config;
 }
 
@@ -196,16 +197,20 @@ Mode_Gimbal_GimbalStabConfig Mode_Gimbal_GimbalStab_DefaultConfig(void)
 {
     Mode_Gimbal_GimbalStabConfig config;
 
-    config.pitch_kp = 0.030F;
-    config.pitch_ki = 0.0F;
-    config.pitch_kd_speed = 0.0055F;
-    config.pitch_polarity = 1.0F;
-    config.pitch_deadband_deg = 0.3F;
-    config.pitch_maximum_error_deg = 16.0F;
-    config.pitch_integral_limit = 0.0F;
-    config.pitch_output_limit = 0.75F;
-    config.pitch_speed_filter_old_weight = 0.3F;
-    config.yaw_encoder_from_imu_polarity = -1.0F;
+    config.pitch_kp = TEMPLATE_GIMBAL_STAB_PITCH_KP;
+    config.pitch_ki = TEMPLATE_GIMBAL_STAB_PITCH_KI;
+    config.pitch_kd_speed = TEMPLATE_GIMBAL_STAB_PITCH_KD_SPEED;
+    config.pitch_polarity = TEMPLATE_GIMBAL_STAB_PITCH_POLARITY;
+    config.pitch_deadband_deg = TEMPLATE_GIMBAL_STAB_PITCH_DEADBAND_DEG;
+    config.pitch_maximum_error_deg =
+        TEMPLATE_GIMBAL_STAB_PITCH_MAXIMUM_ERROR_DEG;
+    config.pitch_integral_limit =
+        TEMPLATE_GIMBAL_STAB_PITCH_INTEGRAL_LIMIT;
+    config.pitch_output_limit = TEMPLATE_GIMBAL_STAB_PITCH_OUTPUT_LIMIT;
+    config.pitch_speed_filter_old_weight =
+        TEMPLATE_GIMBAL_STAB_PITCH_RATE_FILTER_OLD_WEIGHT;
+    config.yaw_encoder_from_imu_polarity =
+        TEMPLATE_GIMBAL_STAB_YAW_ENCODER_FROM_IMU_POLARITY;
     config.yaw_loop = Mode_Gimbal_AngleLoop_DefaultYawConfig();
     return config;
 }

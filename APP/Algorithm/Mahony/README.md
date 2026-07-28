@@ -17,6 +17,8 @@ bias 漂移。它不能冒充航向传感器。
 
 默认 `Kp=2.0 1/s`、`Ki=0.05 1/s²`、最大 dt 50 ms。配置 bias 在积分前从陀螺减去；
 `SetGyroBias()` 可由 Device 静止校准更新，并会清空 Mahony integral feedback。
+这些默认整定值统一定义在 `config/core_config.h` 的“Mahony 姿态估计”分区；本目录
+只保留算法公式、状态和参数合法性检查。
 
 所有更新会归一化四元数。参数、输入、计算结果非有限，dt 非正或超过上限时返回 false，
 Context 与输出保持不变。

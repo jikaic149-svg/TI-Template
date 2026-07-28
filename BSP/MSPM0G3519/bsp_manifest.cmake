@@ -15,7 +15,8 @@ set(BSP_SOURCES
     "${BSP_DIR}/bsp_buzzer.c"
     "${BSP_DIR}/bsp_spi.c"
     "${BSP_DIR}/bsp_time.c"
-    "${BSP_DIR}/bsp_uart.c")
+    "${BSP_DIR}/bsp_uart.c"
+    "${BSP_DIR}/bsp_watchdog.c")
 
 set(BSP_DRIVERLIB_MODULES
     common
@@ -26,4 +27,5 @@ set(BSP_DRIVERLIB_MODULES
     dma
     flashctl
     factoryregion
-    sysctl)
+    sysctl
+    wwdt)

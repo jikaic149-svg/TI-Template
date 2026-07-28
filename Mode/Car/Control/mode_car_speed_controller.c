@@ -1,4 +1,5 @@
 #include "mode_car_control.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -209,25 +210,29 @@ Mode_Car_SpeedController_DefaultConfig(void)
 {
     const Mode_Car_SpeedControllerConfig config = {
         .low_speed = {
-            .kp = 0.15F,
-            .ki = 0.30F,
-            .kd = 0.0005F,
+            .kp = TEMPLATE_CAR_SPEED_LOW_KP,
+            .ki = TEMPLATE_CAR_SPEED_LOW_KI,
+            .kd = TEMPLATE_CAR_SPEED_LOW_KD,
         },
         .high_speed = {
-            .kp = 0.12F,
-            .ki = 0.20F,
-            .kd = 0.0005F,
+            .kp = TEMPLATE_CAR_SPEED_HIGH_KP,
+            .ki = TEMPLATE_CAR_SPEED_HIGH_KI,
+            .kd = TEMPLATE_CAR_SPEED_HIGH_KD,
         },
-        .high_speed_threshold = 300.0F,
-        .error_deadband = 2.0F,
-        /* Initial plant estimate from the measured steady wheel data:
-         * 260 mm/s starts near 14.3 percent instead of the old 39 percent. */
-        .feedforward_percent_per_speed = 0.055F,
-        /* Equivalent to alpha=0.15 at the legacy 5 ms update period. */
-        .target_smoothing_time_constant_seconds = 0.030765F,
-        .maximum_target_speed = 600.0F,
-        .maximum_effort_percent = 55.0F,
-        .stopped_speed_threshold = 20.0F,
+        .high_speed_threshold =
+            TEMPLATE_CAR_SPEED_HIGH_THRESHOLD_MM_PER_SECOND,
+        .error_deadband =
+            TEMPLATE_CAR_SPEED_ERROR_DEADBAND_MM_PER_SECOND,
+        .feedforward_percent_per_speed =
+            TEMPLATE_CAR_SPEED_FEEDFORWARD_PERCENT_PER_MM_PER_SECOND,
+        .target_smoothing_time_constant_seconds =
+            TEMPLATE_CAR_SPEED_TARGET_FILTER_TIME_CONSTANT_SECONDS,
+        .maximum_target_speed =
+            TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND,
+        .maximum_effort_percent =
+            TEMPLATE_CAR_SPEED_MAXIMUM_EFFORT_PERCENT,
+        .stopped_speed_threshold =
+            TEMPLATE_CAR_SPEED_STOPPED_THRESHOLD_MM_PER_SECOND,
     };
     return config;
 }

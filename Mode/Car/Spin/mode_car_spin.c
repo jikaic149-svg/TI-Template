@@ -1,11 +1,12 @@
 #include "mode_car_internal.h"
+#include "core_config.h"
 
 #include <stddef.h>
 
 Mode_Car_SpinConfig Mode_Car_Spin_DefaultConfig(void)
 {
     const Mode_Car_SpinConfig config = {
-        .maximum_drive = 1.0F,
+        .maximum_drive = TEMPLATE_CAR_SPIN_MAXIMUM_DRIVE,
     };
     return config;
 }
@@ -52,12 +53,15 @@ bool Mode_Car_Spin_Update(
 Mode_Car_SpinRateConfig Mode_Car_SpinRate_DefaultConfig(void)
 {
     const Mode_Car_SpinRateConfig config = {
-        .kp = 1.5F,
-        .ki = 0.5F,
-        .integral_output_limit = 60.0F,
-        .maximum_correction_drive = 100.0F,
-        .feedforward_drive_per_dps = 2.0F,
-        .maximum_drive = 220.0F,
+        .kp = TEMPLATE_CAR_SPIN_RATE_KP,
+        .ki = TEMPLATE_CAR_SPIN_RATE_KI,
+        .integral_output_limit =
+            TEMPLATE_CAR_SPIN_RATE_INTEGRAL_OUTPUT_LIMIT,
+        .maximum_correction_drive =
+            TEMPLATE_CAR_SPIN_RATE_MAXIMUM_CORRECTION_DRIVE,
+        .feedforward_drive_per_dps =
+            TEMPLATE_CAR_SPIN_RATE_FEEDFORWARD_DRIVE_PER_DPS,
+        .maximum_drive = TEMPLATE_CAR_SPIN_RATE_MAXIMUM_DRIVE,
     };
     return config;
 }

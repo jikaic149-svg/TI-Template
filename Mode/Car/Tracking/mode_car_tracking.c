@@ -1,4 +1,5 @@
 #include "mode_car_internal.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -6,14 +7,16 @@
 Mode_Car_TrackingConfig Mode_Car_Tracking_DefaultConfig(void)
 {
     const Mode_Car_TrackingConfig config = {
-        .kp = 1.2F,
-        .ki = 0.0F,
-        .kd = 0.03F,
-        .integral_output_limit = 0.5F,
-        .maximum_correction = 0.8F,
-        .maximum_drive = 1.0F,
-        .error_deadband = 0.0F,
-        .stop_on_intersection = false,
+        .kp = TEMPLATE_LINE_STEERING_KP,
+        .ki = TEMPLATE_LINE_STEERING_KI,
+        .kd = TEMPLATE_LINE_STEERING_KD,
+        .integral_output_limit =
+            TEMPLATE_LINE_STEERING_INTEGRAL_OUTPUT_LIMIT,
+        .maximum_correction = TEMPLATE_LINE_STEERING_MAXIMUM_CORRECTION,
+        .maximum_drive = TEMPLATE_LINE_STEERING_MAXIMUM_DRIVE,
+        .error_deadband = TEMPLATE_LINE_STEERING_ERROR_DEADBAND,
+        .stop_on_intersection =
+            TEMPLATE_LINE_STEERING_STOP_ON_INTERSECTION,
     };
     return config;
 }

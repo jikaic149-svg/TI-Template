@@ -1,20 +1,26 @@
 #include "mode_car_internal.h"
+#include "core_config.h"
 
 #include <stddef.h>
 
 Mode_Car_CurveConfig Mode_Car_Curve_DefaultConfig(void)
 {
     const Mode_Car_CurveConfig config = {
-        .outer_kp = 100.0F,
-        .outer_ki = 0.0F,
-        .outer_integral_output_limit = 160.0F,
-        .maximum_heading_rate_deg_per_second = 160.0F,
-        .outer_period_seconds = 0.020F,
-        .inner_kp = 1.5F,
-        .inner_ki = 0.1F,
-        .inner_integral_output_limit = 100.0F,
-        .maximum_drive_difference = 250.0F,
-        .drive_difference_slew_per_second = 700.0F,
+        .outer_kp = TEMPLATE_CAR_CURVE_OUTER_KP,
+        .outer_ki = TEMPLATE_CAR_CURVE_OUTER_KI,
+        .outer_integral_output_limit =
+            TEMPLATE_CAR_CURVE_OUTER_INTEGRAL_OUTPUT_LIMIT,
+        .maximum_heading_rate_deg_per_second =
+            TEMPLATE_CAR_CURVE_MAXIMUM_HEADING_RATE_DPS,
+        .outer_period_seconds = TEMPLATE_CAR_CURVE_OUTER_PERIOD_SECONDS,
+        .inner_kp = TEMPLATE_CAR_CURVE_INNER_KP,
+        .inner_ki = TEMPLATE_CAR_CURVE_INNER_KI,
+        .inner_integral_output_limit =
+            TEMPLATE_CAR_CURVE_INNER_INTEGRAL_OUTPUT_LIMIT,
+        .maximum_drive_difference =
+            TEMPLATE_CAR_CURVE_MAXIMUM_DRIVE_DIFFERENCE,
+        .drive_difference_slew_per_second =
+            TEMPLATE_CAR_CURVE_DRIVE_DIFFERENCE_SLEW_PER_SECOND,
     };
     return config;
 }

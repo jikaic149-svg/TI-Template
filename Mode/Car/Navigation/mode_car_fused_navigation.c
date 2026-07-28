@@ -1,4 +1,5 @@
 #include "mode_car_fused_navigation.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -99,22 +100,32 @@ Mode_Car_FusedNavigation_DefaultConfig(void)
 {
     Mode_Car_FusedNavigationConfig config = {0};
 
-    config.track_width_mm = 120.0F;
-    config.heading_correction_time_constant_seconds = 2.0F;
-    config.encoder_heading_correction_enabled = true;
-    config.slip_gate_enabled = false;
-    config.slip_gate_enter_threshold_deg_per_second = 25.0F;
-    config.slip_gate_exit_threshold_deg_per_second = 12.0F;
-    config.slip_gate_recovery_sample_count = 10U;
-    config.pure_pursuit_curvature_gain = 1.0F;
+    config.track_width_mm = TEMPLATE_CAR_NAV_TRACK_WIDTH_MM;
+    config.heading_correction_time_constant_seconds =
+        TEMPLATE_CAR_NAV_HEADING_CORRECTION_TIME_CONSTANT_SECONDS;
+    config.encoder_heading_correction_enabled =
+        TEMPLATE_CAR_NAV_ENCODER_HEADING_CORRECTION_ENABLED;
+    config.slip_gate_enabled = TEMPLATE_CAR_NAV_SLIP_GATE_ENABLED;
+    config.slip_gate_enter_threshold_deg_per_second =
+        TEMPLATE_CAR_NAV_SLIP_GATE_ENTER_THRESHOLD_DPS;
+    config.slip_gate_exit_threshold_deg_per_second =
+        TEMPLATE_CAR_NAV_SLIP_GATE_EXIT_THRESHOLD_DPS;
+    config.slip_gate_recovery_sample_count =
+        TEMPLATE_CAR_NAV_SLIP_GATE_RECOVERY_SAMPLE_COUNT;
+    config.pure_pursuit_curvature_gain =
+        TEMPLATE_CAR_NAV_PURE_PURSUIT_CURVATURE_GAIN;
     config.yaw_rate_controller = (Mode_Car_SpinRateConfig){
-            .kp = 0.8F,
-            .ki = 0.0F,
-            .integral_output_limit = 0.0F,
-            .maximum_correction_drive = 10.0F,
+            .kp = TEMPLATE_CAR_NAV_YAW_RATE_KP,
+            .ki = TEMPLATE_CAR_NAV_YAW_RATE_KI,
+            .integral_output_limit =
+                TEMPLATE_CAR_NAV_YAW_RATE_INTEGRAL_OUTPUT_LIMIT,
+            .maximum_correction_drive =
+                TEMPLATE_CAR_NAV_YAW_RATE_MAXIMUM_CORRECTION_MM_PER_SECOND,
             /* Init replaces this with track_width*pi/360. */
-            .feedforward_drive_per_dps = 0.0F,
-            .maximum_drive = 115.0F,
+            .feedforward_drive_per_dps =
+                TEMPLATE_CAR_NAV_YAW_RATE_INITIAL_FEEDFORWARD,
+            .maximum_drive =
+                TEMPLATE_CAR_NAV_YAW_RATE_MAXIMUM_DRIVE_MM_PER_SECOND,
     };
     config.speed_controller = Mode_Car_SpeedController_DefaultConfig();
     return config;

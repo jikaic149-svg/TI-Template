@@ -70,6 +70,10 @@ with a future epoch.
 
 ## Audited defaults
 
+The table summarizes behavior. The single numeric source of truth for PID,
+filters, thresholds, limits, and timeouts is the Gimbal section of
+`config/core_config.h`.
+
 | Controller | Key defaults |
 |---|---|
 | Pitch AngleLoop | `Kp=.038`, `Ki=.006`, speed `Kd=.0045`, deadband `.3 deg`, error `14 deg`, I separation `1.5 deg`, I limit `.025`, output `.75`, target `19..112 deg` |

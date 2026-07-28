@@ -7,6 +7,12 @@
 const SYSCTL = scripting.addModule("/ti/driverlib/SYSCTL");
 SYSCTL.forceDefaultClkConfig = true;
 
+const WWDT = scripting.addModule("/ti/driverlib/WWDT", {}, false);
+const SystemWatchdog = WWDT.addInstance();
+SystemWatchdog.$name = "SYSTEM_WATCHDOG";
+SystemWatchdog.profile = "CONFIG_PROFILE_1";
+SystemWatchdog.peripheral.$assign = "WWDT1";
+
 const GPIO    = scripting.addModule("/ti/driverlib/GPIO", {}, false);
 const KeyGPIO = GPIO.addInstance();
 const EncoderGPIO = GPIO.addInstance();

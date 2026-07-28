@@ -23,6 +23,7 @@ bool Mode_Communicate_BluetoothPC_Update(
     *output = (Mode_Communicate_BluetoothOutput){
         .mode = BLUETOOTH_MODE_PC,
         .format = MODE_COMMUNICATE_BLUETOOTH_FORMAT_RAW_STREAM,
+        .duplex_policy = MODE_COMMUNICATE_DUPLEX_UNRESTRICTED,
         .sends_periodic_hello = false,
         .requires_peer_node_id = false,
     };

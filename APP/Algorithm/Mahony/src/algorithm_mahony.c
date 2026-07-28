@@ -1,4 +1,5 @@
 #include "algorithm_mahony.h"
+#include "core_config.h"
 
 #include <limits.h>
 #include <math.h>
@@ -111,12 +112,18 @@ static bool valid_config(const Algorithm_Mahony_Config *config)
 Algorithm_Mahony_Config Algorithm_Mahony_DefaultConfig(void)
 {
     const Algorithm_Mahony_Config config = {
-        .proportional_gain = 2.0F,
-        .integral_gain = 0.05F,
-        .acceleration_reference_mps2 = 9.80665F,
-        .acceleration_tolerance_mps2 = 3.0F,
-        .maximum_dt_seconds = 0.050F,
-        .gyro_bias_rad_per_second = {0.0F, 0.0F, 0.0F},
+        .proportional_gain = TEMPLATE_MAHONY_PROPORTIONAL_GAIN,
+        .integral_gain = TEMPLATE_MAHONY_INTEGRAL_GAIN,
+        .acceleration_reference_mps2 =
+            TEMPLATE_MAHONY_ACCELERATION_REFERENCE_MPS2,
+        .acceleration_tolerance_mps2 =
+            TEMPLATE_MAHONY_ACCELERATION_TOLERANCE_MPS2,
+        .maximum_dt_seconds = TEMPLATE_MAHONY_MAXIMUM_DT_SECONDS,
+        .gyro_bias_rad_per_second = {
+            TEMPLATE_MAHONY_GYRO_BIAS_X_RAD_PER_SECOND,
+            TEMPLATE_MAHONY_GYRO_BIAS_Y_RAD_PER_SECOND,
+            TEMPLATE_MAHONY_GYRO_BIAS_Z_RAD_PER_SECOND,
+        },
     };
     return config;
 }

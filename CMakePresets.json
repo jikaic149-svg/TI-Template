@@ -54,9 +54,8 @@
         "TEMPLATE_ENABLE_MODE_GIMBAL": false,
         "TEMPLATE_ENABLE_MODE_COMMUNICATE": false,
         "TEMPLATE_ENABLE_DEVICE_SERIAL": false,
-        "TEMPLATE_ENABLE_DEVICE_FLASH": false,
-        "TEMPLATE_ENABLE_TASK_LINE_TRACKING_READOUT": false,
-        "TEMPLATE_ENABLE_TASK_ANALOG_TRACKING": false
+        "TEMPLATE_ENABLE_DEVICE_LORA": false,
+        "TEMPLATE_ENABLE_DEVICE_FLASH": false
       }
     },
     {
@@ -102,66 +101,6 @@
       }
     },
     {
-      "name": "g3519-tb6612-line-readout-debug",
-      "displayName": "MSPM0G3519 + TB6612 Xinliu T8 Readout - Debug",
-      "inherits": "g3519-debug",
-      "binaryDir": "${sourceDir}/build/MSPM0G3519-TB6612-LineReadout/Debug",
-      "cacheVariables": {
-        "TEMPLATE_ENABLE_DEVICE_LINE_TRACKING": true,
-        "TEMPLATE_ENABLE_DEVICE_XINLIU_T8": true,
-        "TEMPLATE_ENABLE_MODE_CAR": true,
-        "TEMPLATE_ENABLE_TASK_LINE_TRACKING_READOUT": true
-      }
-    },
-    {
-      "name": "g3519-tb6612-line-readout-release",
-      "displayName": "MSPM0G3519 + TB6612 Xinliu T8 Readout - Release",
-      "inherits": "g3519-release",
-      "binaryDir": "${sourceDir}/build/MSPM0G3519-TB6612-LineReadout/Release",
-      "cacheVariables": {
-        "TEMPLATE_ENABLE_DEVICE_LINE_TRACKING": true,
-        "TEMPLATE_ENABLE_DEVICE_XINLIU_T8": true,
-        "TEMPLATE_ENABLE_MODE_CAR": true,
-        "TEMPLATE_ENABLE_TASK_LINE_TRACKING_READOUT": true
-      }
-    },
-    {
-      "name": "g3519-tb6612-analog-tracking-debug",
-      "displayName": "MSPM0G3519 + TB6612 Xinliu T8 Analog Tracking - Debug",
-      "inherits": "g3519-debug",
-      "binaryDir": "${sourceDir}/build/MSPM0G3519-TB6612-AnalogTracking/Debug",
-      "cacheVariables": {
-        "TEMPLATE_ENABLE_DEVICE_ICM45686": true,
-        "TEMPLATE_ENABLE_DEVICE_ENCODER": true,
-        "TEMPLATE_ENABLE_DEVICE_KEY": true,
-        "TEMPLATE_ENABLE_DEVICE_LINE_TRACKING": true,
-        "TEMPLATE_ENABLE_DEVICE_XINLIU_T8": true,
-        "TEMPLATE_ENABLE_DEVICE_MOTOR": true,
-        "TEMPLATE_ENABLE_DEVICE_RGB": true,
-        "TEMPLATE_ENABLE_MODE_CAR": true,
-        "TEMPLATE_ENABLE_MODE_COMMUNICATE": true,
-        "TEMPLATE_ENABLE_TASK_ANALOG_TRACKING": true
-      }
-    },
-    {
-      "name": "g3519-tb6612-analog-tracking-release",
-      "displayName": "MSPM0G3519 + TB6612 Xinliu T8 Analog Tracking - Release",
-      "inherits": "g3519-release",
-      "binaryDir": "${sourceDir}/build/MSPM0G3519-TB6612-AnalogTracking/Release",
-      "cacheVariables": {
-        "TEMPLATE_ENABLE_DEVICE_ICM45686": true,
-        "TEMPLATE_ENABLE_DEVICE_ENCODER": true,
-        "TEMPLATE_ENABLE_DEVICE_KEY": true,
-        "TEMPLATE_ENABLE_DEVICE_LINE_TRACKING": true,
-        "TEMPLATE_ENABLE_DEVICE_XINLIU_T8": true,
-        "TEMPLATE_ENABLE_DEVICE_MOTOR": true,
-        "TEMPLATE_ENABLE_DEVICE_RGB": true,
-        "TEMPLATE_ENABLE_MODE_CAR": true,
-        "TEMPLATE_ENABLE_MODE_COMMUNICATE": true,
-        "TEMPLATE_ENABLE_TASK_ANALOG_TRACKING": true
-      }
-    },
-    {
       "name": "g3519-at8236-debug",
       "displayName": "MSPM0G3519 + AT8236 - Debug",
       "inherits": "g3519-debug",
@@ -199,26 +138,6 @@
     {
       "name": "build-g3519-release",
       "configurePreset": "g3519-release",
-      "jobs": 8
-    },
-    {
-      "name": "build-g3519-tb6612-line-readout-debug",
-      "configurePreset": "g3519-tb6612-line-readout-debug",
-      "jobs": 8
-    },
-    {
-      "name": "build-g3519-tb6612-line-readout-release",
-      "configurePreset": "g3519-tb6612-line-readout-release",
-      "jobs": 8
-    },
-    {
-      "name": "build-g3519-tb6612-analog-tracking-debug",
-      "configurePreset": "g3519-tb6612-analog-tracking-debug",
-      "jobs": 8
-    },
-    {
-      "name": "build-g3519-tb6612-analog-tracking-release",
-      "configurePreset": "g3519-tb6612-analog-tracking-release",
       "jobs": 8
     },
     {

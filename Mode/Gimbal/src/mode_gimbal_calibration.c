@@ -1,4 +1,5 @@
 #include "mode_gimbal_internal.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -78,10 +79,10 @@ Mode_Gimbal_GravityFeedforward_DefaultConfig(void)
 {
     Mode_Gimbal_GravityFeedforwardConfig config;
 
-    config.sin_coefficient = 0.0300124F;
-    config.cos_coefficient = 0.0200932F;
-    config.offset = 0.0038665F;
-    config.maximum_current = 0.6F;
+    config.sin_coefficient = TEMPLATE_GIMBAL_GRAVITY_SIN_COEFFICIENT;
+    config.cos_coefficient = TEMPLATE_GIMBAL_GRAVITY_COS_COEFFICIENT;
+    config.offset = TEMPLATE_GIMBAL_GRAVITY_OFFSET;
+    config.maximum_current = TEMPLATE_GIMBAL_GRAVITY_MAXIMUM_CURRENT;
     return config;
 }
 
@@ -114,11 +115,12 @@ Mode_Gimbal_GravityCalibConfig Mode_Gimbal_GravityCalib_DefaultConfig(void)
 
     config.pitch_loop = Mode_Gimbal_AngleLoop_DefaultPitchConfig();
     config.yaw_loop = Mode_Gimbal_AngleLoop_DefaultYawConfig();
-    config.pitch_minimum_deg = 19.0F;
-    config.pitch_maximum_deg = 112.0F;
-    config.endpoint_margin_deg = 6.0F;
-    config.settle_time_ms = 1200U;
-    config.sample_time_ms = 900U;
+    config.pitch_minimum_deg = TEMPLATE_GIMBAL_PITCH_MINIMUM_DEG;
+    config.pitch_maximum_deg = TEMPLATE_GIMBAL_PITCH_MAXIMUM_DEG;
+    config.endpoint_margin_deg =
+        TEMPLATE_GIMBAL_GRAVITY_ENDPOINT_MARGIN_DEG;
+    config.settle_time_ms = TEMPLATE_GIMBAL_GRAVITY_SETTLE_TIME_MS;
+    config.sample_time_ms = TEMPLATE_GIMBAL_GRAVITY_SAMPLE_TIME_MS;
     config.feedforward = Mode_Gimbal_GravityFeedforward_DefaultConfig();
     return config;
 }

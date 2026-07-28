@@ -1,0 +1,12 @@
+# Reproducible build and generated outputs. Explicit paths or `rg -uu` can
+# still be used when diagnosing generated code.
+/build/
+
+# Historical decisions are intentionally outside default whole-repository
+# searches so stale facts do not outrank current source and current docs.
+/docs/PROCESS.md
+
+# Original hardware attachments and runtime captures are not source text.
+/*.pdf
+/*.xlsx
+*.csv

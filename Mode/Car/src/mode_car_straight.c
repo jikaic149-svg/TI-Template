@@ -1,4 +1,5 @@
 #include "mode_car_internal.h"
+#include "core_config.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -6,13 +7,15 @@
 Mode_Car_StraightConfig Mode_Car_Straight_DefaultConfig(void)
 {
     const Mode_Car_StraightConfig config = {
-        .kp = 1.5F,
-        .ki = 0.0F,
-        .kd = 0.2F,
-        .gain_reference_seconds = 0.005F,
-        .integral_output_limit = 300.0F,
-        .maximum_correction = 200.0F,
-        .correction_ratio = 0.5F,
+        .kp = TEMPLATE_CAR_STRAIGHT_KP,
+        .ki = TEMPLATE_CAR_STRAIGHT_KI,
+        .kd = TEMPLATE_CAR_STRAIGHT_KD,
+        .gain_reference_seconds =
+            TEMPLATE_CAR_STRAIGHT_GAIN_REFERENCE_SECONDS,
+        .integral_output_limit =
+            TEMPLATE_CAR_STRAIGHT_INTEGRAL_OUTPUT_LIMIT,
+        .maximum_correction = TEMPLATE_CAR_STRAIGHT_MAXIMUM_CORRECTION,
+        .correction_ratio = TEMPLATE_CAR_STRAIGHT_CORRECTION_RATIO,
     };
     return config;
 }

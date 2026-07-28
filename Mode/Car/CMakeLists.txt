@@ -17,7 +17,8 @@ add_library(mode_car STATIC
 target_include_directories(mode_car PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(mode_car PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_SOURCE_DIR}/config")
 
 target_link_libraries(mode_car PUBLIC
     algorithm_pid

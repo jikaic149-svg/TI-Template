@@ -7,6 +7,8 @@ add_library(mode_gimbal STATIC
 
 target_include_directories(mode_gimbal PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_include_directories(mode_gimbal PRIVATE
+    "${CMAKE_SOURCE_DIR}/config")
 
 target_link_libraries(mode_gimbal PUBLIC
     mspm0_build_options)

@@ -38,6 +38,8 @@ function(mspm0_add_driverlib_modules target_name)
             set(module_source "${SDK_SOURCE}/ti/driverlib/dl_adc12.c")
         elseif(module_name STREQUAL "flashctl")
             set(module_source "${SDK_SOURCE}/ti/driverlib/dl_flashctl.c")
+        elseif(module_name STREQUAL "wwdt")
+            set(module_source "${SDK_SOURCE}/ti/driverlib/dl_wwdt.c")
         else()
             message(FATAL_ERROR
                 "Unknown DriverLib module '${module_name}'")
