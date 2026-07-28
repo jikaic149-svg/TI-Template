@@ -52,10 +52,14 @@
 
 ## 修改与验证路由
 
-- 仅文档：运行 `tools/check_template.ps1` 和 `git diff --check`。
-- APP/Device/Mode C源码：运行 `tests/run_gcc_tests.ps1`、`tests/run_arm_compile.ps1`、
-  `tools/check_template.ps1`。
-- CMake、BSP、Task 或公共API：除上述检查外，配置并构建受影响的 Debug/Release profile。
+- 日常源码、配置和构建修改：优先运行
+  `tools/project.ps1 -Action Verify -Scope Auto`；它按变更组件选择 host 测试、ARM 编译和
+  需要的构建 profile，不把缓存结果当作实物验证。
+- 仅文档：运行 `tools/check_template.ps1` 和 `git diff HEAD --check`，不触发组件编译。
+- 首次建立缓存或准备可审计基线：运行
+  `tools/project.ps1 -Action Verify -Scope All -Clean`；不得把日常 Auto 验证表述为全量验证。
+- CMake、BSP、Task 或公共 API 必须在 `config/verification/components.json` 中映射到受影响的
+  Debug/Release profile，不能只通过 host 或单文件编译得出完整构建结论。
 - SysConfig/引脚：同时运行 TI SysConfig 生成，核对资源映射、波特率/PWM/时钟和对应
   Debug/Release 完整链接。
 - 烧录：只有用户明确要求时执行；显式选择探针，写入后完整回读校验，再报告运行结果。

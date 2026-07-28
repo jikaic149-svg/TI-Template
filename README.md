@@ -100,7 +100,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\mspm0.ps1 `
   -Action Build -Device MSPM0G3519 -Configuration Debug -MotorDriver AT8236
 ```
 
-六套 preset：
+八套 preset：
 
 ```text
 g3507-debug
@@ -109,7 +109,13 @@ g3519-debug
 g3519-release
 g3519-at8236-debug
 g3519-at8236-release
+g3519-feature-smoke-debug
+g3519-feature-smoke-release
 ```
+
+`feature-smoke` 只用于验证：它在 G3519 上同时交叉编译当前所有可选 Algorithm、Device
+和 Mode，并完成模板基础固件链接。模板没有产品 Task 去引用这些可选静态库，因此该
+结果证明组件能够进入 ARM 构建，不代表它们已经集成到某个产品固件或经过实物验证。
 
 Debug 使用 `-Og -g3`，适合断点和变量观察；Release 使用 `-Os`，
 体积更小，但未被程序读取的变量可能被优化或链接回收。
@@ -117,6 +123,21 @@ Debug 使用 `-Og -g3`，适合断点和变量观察；Release 使用 `-Os`，
 运行 VS Code 任务 `Template: Check Architecture` 可以检查上层是否误用
 DriverLib/固定外设、是否出现隐式源码通配符、是否混入逐飞源码，以及
 `launch.json`/`tasks.json` 的任务引用是否断开或重名。
+
+AI 或日常开发优先使用增量验证入口：
+
+```powershell
+# 按当前改动自动选择需要验证的组件
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\project.ps1 `
+  -Action Verify -Scope Auto
+
+# 查看缓存状态，不编译
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\project.ps1 `
+  -Action CacheStatus
+```
+
+第一次建立缓存或准备基线时使用 `-Action Verify -Scope All -Clean`。第一次会比较慢；
+之后普通修改只验证受影响组件。该工具不会 commit、push、烧录或宣称硬件已经验证。
 
 构建只编译所选 BSP 明确登记的 DriverLib 源。增加 UART、SPI、ADC 等功能时，
 把对应模块加入该 BSP 或组件的 manifest；禁止用文件通配符编译全部 DriverLib。
@@ -134,11 +155,14 @@ Algorithm 与 Device 默认关闭，只有显式打开对应选项时才进入�
 
 - Algorithm：`TEMPLATE_ENABLE_ALGORITHM_PID`、
   `TEMPLATE_ENABLE_ALGORITHM_FILTER`、`TEMPLATE_ENABLE_ALGORITHM_MAHONY`、
+  `TEMPLATE_ENABLE_ALGORITHM_LINE_TRACKING`、
   `TEMPLATE_ENABLE_ALGORITHM_PACKET`、
   `TEMPLATE_ENABLE_ALGORITHM_RELIABLE_LINK`、
   `TEMPLATE_ENABLE_ALGORITHM_SPSC_RING`、`TEMPLATE_ENABLE_ALGORITHM_LQR`、
   `TEMPLATE_ENABLE_ALGORITHM_ADRC`、`TEMPLATE_ENABLE_ALGORITHM_CRC`。
 - Device：`TEMPLATE_ENABLE_DEVICE_KEY`、`TEMPLATE_ENABLE_DEVICE_MOTOR`、
+  `TEMPLATE_ENABLE_DEVICE_LED`、`TEMPLATE_ENABLE_DEVICE_RGB`、
+  `TEMPLATE_ENABLE_DEVICE_SERVO`、
   `TEMPLATE_ENABLE_DEVICE_POWER_SWITCH`、
   `TEMPLATE_ENABLE_DEVICE_ENCODER`、`TEMPLATE_ENABLE_DEVICE_JY61P`、
   `TEMPLATE_ENABLE_DEVICE_LINGKE_M0`、

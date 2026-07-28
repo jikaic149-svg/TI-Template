@@ -1,5 +1,36 @@
 # 工程变更记录
 
+## 2026-07-28：修复增量验证并补齐可选组件覆盖
+
+- 修改原因：模板需要为 AI 辅助和日常开发提供可信且省时的验证入口；原增量缓存会因
+  任一核心参数或 Markdown 改动扩大编译范围，验证清单中的错误引用也可能导致漏检，
+  Windows PowerShell 5.1 还存在模块编码和子脚本参数传递问题；提交前审计又发现 AI
+  上下文、构建复用证据、可选源码严格编译和 clean 基线判断存在遗漏。
+- 最终决策：验证清单升级为 schema 2，`core_config.h` 保持单文件，并按
+  `TEMPLATE_CAR_`、`TEMPLATE_GIMBAL_`、`TEMPLATE_IMU_FUSION_` 等宏前缀只使所属
+  组件缓存失效；变更中的 Markdown 会进入 AI 优先文件清单，但不参与编译缓存哈希。
+  架构检查会校验清单输入、依赖、host/ARM scope、构建 preset 和核心参数前缀覆盖。
+  统一工具使用 UTF-8 BOM 兼容 Windows PowerShell 5.1，以命名参数向子脚本传递
+  `Scope`，保留复用 preset 名称，并要求所有构建组件同时具有 fresh、clean 和完整
+  preset 证据后才宣布基线就绪。日常入口固定为
+  `tools/project.ps1 -Action Verify -Scope Auto`；首次建立缓存或准备基线才运行
+  `-Action Verify -Scope All -Clean`。
+- 构建覆盖：新增 G3519 `feature-smoke` Debug/Release preset，同时打开当前所有可选
+  Algorithm、Device 和 Mode。可选静态库没有产品 Task 引用，因此只将结果表述为组件
+  ARM 构建通过，不表述为产品固件集成完成。
+- 涉及文件：`AGENTS.md`、根/Mode/config 说明、`CMakePresets.json`、
+  `config/verification/components.json`、ARM 编译与模板检查脚本、统一项目工具及本记录；
+  未增加 Task、状态机、硬件配置或运行期行为。
+- 验证方式和结果：全部 host GCC 测试通过；ARM `All` 共 62 个源文件通过，并验证
+  Watchdog、Communication、IMU、Motor、Navigation、LineTracking、Gimbal、Optional
+  独立 scope；
+  G3519 FeatureSmoke Debug/Release 均完成 142 步干净构建。九个增量组件全量验证通过后，
+  `Verify Auto` 只执行全局架构与 `git diff HEAD --check`，九个组件全部命中缓存；模板检查
+  和最终差异空白检查通过。
+- 已知限制：本次未烧录、未上板，也未验证传感器、电机、通信或控制参数的实物行为；
+  FeatureSmoke 不证明可选组件已被某个产品 Task 调用。
+- 待确认事项：无；后续新增核心参数、组件或 preset 时必须同步验证清单。
+
 ## 2026-07-28：核心整定参数集中到单一分类配置
 
 - 修改原因：用户要求把 PID、Kalman、滤波以及常调的 Task 周期/优先级/栈、阈值、

@@ -35,10 +35,130 @@ function Add-Finding {
     $findings.Add(("{0}:{1}: {2}" -f $relative, $Line, $Reason))
 }
 
+function Test-TemplateEntryUnderDirectory {
+    param(
+        [Parameter(Mandatory = $true)][System.IO.FileSystemInfo]$Entry,
+        [Parameter(Mandatory = $true)][string]$RelativeDirectory
+    )
+
+    $directoryPath = [System.IO.Path]::GetFullPath(
+        (Join-Path $Root $RelativeDirectory)).TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar)
+    $prefix = $directoryPath + [System.IO.Path]::DirectorySeparatorChar
+    return $Entry.FullName.StartsWith(
+        $prefix,
+        [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-ManifestInputPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$ManifestPath,
+        [Parameter(Mandatory = $true)][string]$Field,
+        [AllowNull()]$Entry
+    )
+
+    if ($Entry -isnot [string] -or [string]::IsNullOrWhiteSpace($Entry)) {
+        Add-Finding -Path $ManifestPath -Line 1 -Reason (
+            "{0} contains an empty or non-string input path" -f $Field)
+        return $null
+    }
+    if ([System.IO.Path]::IsPathRooted($Entry)) {
+        Add-Finding -Path $ManifestPath -Line 1 -Reason (
+            "{0} input must be repository-relative: {1}" -f $Field, $Entry)
+        return $null
+    }
+
+    try {
+        $candidate = [System.IO.Path]::GetFullPath((Join-Path $Root $Entry))
+    }
+    catch {
+        Add-Finding -Path $ManifestPath -Line 1 -Reason (
+            "{0} contains an invalid input path: {1}" -f $Field, $Entry)
+        return $null
+    }
+
+    $rootPrefix = $Root.TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar) +
+        [System.IO.Path]::DirectorySeparatorChar
+    if (-not $candidate.StartsWith(
+            $rootPrefix,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        Add-Finding -Path $ManifestPath -Line 1 -Reason (
+            "{0} input escapes the repository: {1}" -f $Field, $Entry)
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $candidate)) {
+        Add-Finding -Path $ManifestPath -Line 1 -Reason (
+            "{0} input does not exist: {1}" -f $Field, $Entry)
+        return $null
+    }
+    return $candidate
+}
+
+function Get-ScriptParameterValidateSet {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ParameterName
+    )
+
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        $Path,
+        [ref]$tokens,
+        [ref]$parseErrors)
+    if ($parseErrors.Count -ne 0) {
+        throw ("cannot parse script: {0}" -f
+            (($parseErrors | ForEach-Object { $_.Message }) -join "; "))
+    }
+
+    $parameter = $ast.ParamBlock.Parameters |
+        Where-Object { $_.Name.VariablePath.UserPath -ceq $ParameterName } |
+        Select-Object -First 1
+    if ($null -eq $parameter) {
+        throw ("parameter '{0}' is missing" -f $ParameterName)
+    }
+    $validateSet = $parameter.Attributes |
+        Where-Object { $_.TypeName.Name -ceq "ValidateSet" } |
+        Select-Object -First 1
+    if ($null -eq $validateSet) {
+        throw ("parameter '{0}' has no ValidateSet" -f $ParameterName)
+    }
+
+    return @($validateSet.PositionalArguments | ForEach-Object {
+            [string]$_.SafeGetValue()
+        })
+}
+
 # Keep generated output, executable configuration, and project records in
 # separate roots. This prevents old root-level Config/cmake/debug directories
 # from silently returning and becoming competing configuration sources.
-$rootDirectories = @(Get-ChildItem -LiteralPath $Root -Directory -Force)
+$rootEntries = @(Get-ChildItem -LiteralPath $Root -Force -ErrorAction Stop)
+$rootDirectories = @($rootEntries | Where-Object { $_.PSIsContainer })
+$excludedScanRoots = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+foreach ($excludedName in @(".git", ".agents", ".codex", "build")) {
+    [void]$excludedScanRoots.Add($excludedName)
+}
+
+# Enumerate each allowed root branch once. In particular, do not enter build
+# or AI/Git metadata and attempt to filter their descendants afterward.
+$repositoryEntries = @(
+    $rootEntries
+    foreach ($directory in $rootDirectories) {
+        if ($excludedScanRoots.Contains($directory.Name)) {
+            continue
+        }
+        Get-ChildItem -LiteralPath $directory.FullName -Recurse -Force `
+            -ErrorAction Stop
+    }
+)
+$repositoryFiles = @($repositoryEntries |
+    Where-Object { -not $_.PSIsContainer })
+$repositoryDirectories = @($repositoryEntries |
+    Where-Object { $_.PSIsContainer })
 foreach ($legacyName in @("Config", "cmake", "debug", "Profile", "System")) {
     $legacyDirectory = $rootDirectories |
         Where-Object { $_.Name -ceq $legacyName } |
@@ -49,20 +169,24 @@ foreach ($legacyName in @("Config", "cmake", "debug", "Profile", "System")) {
     }
 }
 
-$requiredConfigFiles = @(
+$requiredFiles = @(
     "config\README.md",
+    "config\core_config.h",
     "config\cmake\arm-gcc-toolchain.cmake",
     "config\cmake\DriverLibModules.cmake",
     "config\openocd\README.md",
     "config\openocd\daplink.local.cfg.example",
     "config\openocd\xds110.local.cfg.example",
     "config\openocd\mspm0_daplink_custom.cfg",
-    "config\openocd\mspm0_xds110.cfg"
+    "config\openocd\mspm0_xds110.cfg",
+    "config\verification\components.json",
+    "tools\project.ps1",
+    "tools\lib\ProjectTools.psm1"
 )
-foreach ($relative in $requiredConfigFiles) {
+foreach ($relative in $requiredFiles) {
     $path = Join-Path $Root $relative
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        Add-Finding -Path $path -Line 1 -Reason "required configuration file is missing"
+        Add-Finding -Path $path -Line 1 -Reason "required template file is missing"
     }
 }
 
@@ -73,7 +197,11 @@ if (Test-Path -LiteralPath $configRoot -PathType Container) {
         "config\openocd",
         "config\verification"
     )
-    $configDirectories = Get-ChildItem -LiteralPath $configRoot -Directory -Recurse -Force
+    $configDirectories = @($repositoryDirectories |
+        Where-Object {
+            Test-TemplateEntryUnderDirectory -Entry $_ `
+                -RelativeDirectory "config"
+        })
     foreach ($directory in $configDirectories) {
         $relative = (Get-RelativeTemplatePath -Path $directory.FullName).Replace("/", "\")
         if ($relative -notin $allowedConfigDirectories) {
@@ -82,7 +210,11 @@ if (Test-Path -LiteralPath $configRoot -PathType Container) {
         }
     }
 
-    $configFiles = Get-ChildItem -LiteralPath $configRoot -File -Recurse -Force
+    $configFiles = @($repositoryFiles |
+        Where-Object {
+            Test-TemplateEntryUnderDirectory -Entry $_ `
+                -RelativeDirectory "config"
+        })
     foreach ($file in $configFiles) {
         $relative = (Get-RelativeTemplatePath -Path $file.FullName).Replace("/", "\")
         $allowed = (
@@ -101,8 +233,12 @@ if (Test-Path -LiteralPath $configRoot -PathType Container) {
 
     $openOcdRoot = Join-Path $configRoot "openocd"
     if (Test-Path -LiteralPath $openOcdRoot -PathType Container) {
-        $openOcdCfgFiles = Get-ChildItem -LiteralPath $openOcdRoot -File -Force |
-            Where-Object { $_.Name -match '\.cfg(?:\.example)?$' }
+        $openOcdCfgFiles = $repositoryFiles |
+            Where-Object {
+                (Test-TemplateEntryUnderDirectory -Entry $_ `
+                    -RelativeDirectory "config\openocd") -and
+                $_.Name -match '\.cfg(?:\.example)?$'
+            }
         foreach ($file in $openOcdCfgFiles) {
             $serialMatches = @(Select-String -LiteralPath $file.FullName -Pattern (
                 '^\s*adapter\s+serial\b'))
@@ -116,7 +252,11 @@ if (Test-Path -LiteralPath $configRoot -PathType Container) {
 
 $docsRoot = Join-Path $Root "docs"
 if (Test-Path -LiteralPath $docsRoot -PathType Container) {
-    $nonMarkdownDocs = Get-ChildItem -LiteralPath $docsRoot -File -Recurse -Force |
+    $nonMarkdownDocs = $repositoryFiles |
+        Where-Object {
+            Test-TemplateEntryUnderDirectory -Entry $_ `
+                -RelativeDirectory "docs"
+        } |
         Where-Object { $_.Extension -cne ".md" }
     foreach ($file in $nonMarkdownDocs) {
         Add-Finding -Path $file.FullName -Line 1 -Reason (
@@ -137,11 +277,12 @@ if ("/build/" -notin $gitIgnoreLines) {
 $upperLayerRoots = @(
     "APP",
     "BSP\include",
-    "APP\Algorithm",
     "Device",
     "Mode",
     "Task"
 )
+$sourceFiles = @($repositoryFiles |
+    Where-Object { $_.Extension -in @(".c", ".h") })
 $forbiddenPatterns = @(
     @{
         Pattern = '#\s*include\s*[<"](?:ti_msp_dl_config|ti/driverlib|driverlib)'
@@ -167,8 +308,11 @@ foreach ($relativeRoot in $upperLayerRoots) {
         continue
     }
 
-    $files = Get-ChildItem -LiteralPath $directory -File -Recurse |
-        Where-Object { $_.Extension -in @(".c", ".h") }
+    $files = @($sourceFiles |
+        Where-Object {
+            Test-TemplateEntryUnderDirectory -Entry $_ `
+                -RelativeDirectory $relativeRoot
+        })
     foreach ($file in $files) {
         foreach ($rule in $forbiddenPatterns) {
             $matches = @(Select-String -LiteralPath $file.FullName -Pattern $rule.Pattern -AllMatches)
@@ -183,8 +327,10 @@ foreach ($relativeRoot in $upperLayerRoots) {
 # not leak back into reusable math and protocol components.
 $appDirectory = Join-Path $Root "APP"
 if (Test-Path -LiteralPath $appDirectory -PathType Container) {
-    $appFiles = Get-ChildItem -LiteralPath $appDirectory -File -Recurse |
-        Where-Object { $_.Extension -in @(".c", ".h") }
+    $appFiles = @($sourceFiles |
+        Where-Object {
+            Test-TemplateEntryUnderDirectory -Entry $_ -RelativeDirectory "APP"
+        })
     $appDependencyPatterns = @(
         @{
             Pattern = '#\s*include\s*[<"](?:bsp_|device_|mode_|FreeRTOS|task\.h)'
@@ -209,8 +355,10 @@ if (Test-Path -LiteralPath $appDirectory -PathType Container) {
 # algorithms, but not on hardware ownership or FreeRTOS scheduling.
 $modeDirectory = Join-Path $Root "Mode"
 if (Test-Path -LiteralPath $modeDirectory -PathType Container) {
-    $modeFiles = Get-ChildItem -LiteralPath $modeDirectory -File -Recurse |
-        Where-Object { $_.Extension -in @(".c", ".h") }
+    $modeFiles = @($sourceFiles |
+        Where-Object {
+            Test-TemplateEntryUnderDirectory -Entry $_ -RelativeDirectory "Mode"
+        })
     $modeDependencyPatterns = @(
         @{
             Pattern = '#\s*include\s*[<"](?:bsp_|device_|app_|profile_)'
@@ -239,8 +387,10 @@ if (Test-Path -LiteralPath $modeDirectory -PathType Container) {
 # registers or BSP backends directly.
 $taskDirectory = Join-Path $Root "Task"
 if (Test-Path -LiteralPath $taskDirectory -PathType Container) {
-    $taskSources = Get-ChildItem -LiteralPath $taskDirectory -File -Recurse |
-        Where-Object { $_.Extension -in @(".c", ".h") }
+    $taskSources = @($sourceFiles |
+        Where-Object {
+            Test-TemplateEntryUnderDirectory -Entry $_ -RelativeDirectory "Task"
+        })
     $taskHardwarePatterns = @(
         @{
             Pattern = '#\s*include\s*[<"](?:bsp_|ti_msp_dl_config|ti/driverlib|driverlib)'
@@ -300,11 +450,8 @@ $watchdogFeedRules = @(
         Reason = "BSP watchdog feed must be reached only through Device_Watchdog"
     }
 )
-$watchdogSources = Get-ChildItem -LiteralPath $Root -File -Recurse |
-    Where-Object {
-        $_.Extension -ceq ".c" -and
-        $_.FullName -notmatch '[\\/]build[\\/]'
-    }
+$watchdogSources = @($sourceFiles |
+    Where-Object { $_.Extension -ceq ".c" })
 foreach ($rule in $watchdogFeedRules) {
     foreach ($file in $watchdogSources) {
         $relative = (Get-RelativeTemplatePath -Path $file.FullName).Replace("/", "\")
@@ -318,11 +465,8 @@ foreach ($rule in $watchdogFeedRules) {
     }
 }
 
-$sourceLikeFiles = Get-ChildItem -LiteralPath $Root -File -Recurse -Force |
-    Where-Object {
-        $_.FullName -notmatch '[\\/]build[\\/]' -and
-        $_.Extension -in @(".c", ".h", ".a", ".lib")
-    }
+$sourceLikeFiles = @($repositoryFiles |
+    Where-Object { $_.Extension -in @(".c", ".h", ".a", ".lib") })
 foreach ($file in $sourceLikeFiles) {
     $relative = Get-RelativeTemplatePath -Path $file.FullName
     if ($file.Extension -in @(".a", ".lib")) {
@@ -334,11 +478,10 @@ foreach ($file in $sourceLikeFiles) {
     }
 }
 
-$cmakeFiles = Get-ChildItem -LiteralPath $Root -File -Recurse -Force |
+$cmakeFiles = @($repositoryFiles |
     Where-Object {
-        $_.FullName -notmatch '[\\/]build[\\/]' -and
-        ($_.Name -eq "CMakeLists.txt" -or $_.Extension -eq ".cmake")
-    }
+        $_.Name -eq "CMakeLists.txt" -or $_.Extension -eq ".cmake"
+    })
 foreach ($file in $cmakeFiles) {
     $matches = @(Select-String -LiteralPath $file.FullName -Pattern '^\s*file\s*\(\s*GLOB(?:_RECURSE)?\b')
     foreach ($match in $matches) {
@@ -363,6 +506,200 @@ foreach ($relative in $jsonFiles) {
     catch {
         Add-Finding -Path $path -Line 1 -Reason "invalid JSON"
     }
+}
+
+# The incremental verifier manifest is executable project metadata. Validate
+# references here so a typo cannot silently skip tests or firmware presets.
+$manifestPath = Join-Path $Root "config\verification\components.json"
+try {
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+    $schemaProperty = $manifest.PSObject.Properties["schemaVersion"]
+    if ($null -eq $schemaProperty -or $schemaProperty.Value -ne 2) {
+        Add-Finding -Path $manifestPath -Line 1 -Reason (
+            "verification manifest schemaVersion must be 2")
+    }
+
+    foreach ($field in @("globalInputs", "contextInputs")) {
+        $property = $manifest.PSObject.Properties[$field]
+        if ($null -eq $property -or $property.Value -isnot [System.Array]) {
+            Add-Finding -Path $manifestPath -Line 1 -Reason (
+                "verification manifest '{0}' must be an array" -f $field)
+            continue
+        }
+        foreach ($entry in @($property.Value)) {
+            [void](Test-ManifestInputPath -ManifestPath $manifestPath `
+                    -Field $field -Entry $entry)
+        }
+    }
+
+    $coreConfigFullPath = $null
+    $coreProperty = $manifest.PSObject.Properties["coreConfig"]
+    if ($null -eq $coreProperty) {
+        Add-Finding -Path $manifestPath -Line 1 -Reason (
+            "verification manifest is missing 'coreConfig'")
+    }
+    else {
+        $coreConfigFullPath = Test-ManifestInputPath `
+            -ManifestPath $manifestPath -Field "coreConfig" `
+            -Entry $coreProperty.Value
+        if ($null -ne $coreConfigFullPath -and
+            -not (Test-Path -LiteralPath $coreConfigFullPath -PathType Leaf)) {
+            Add-Finding -Path $manifestPath -Line 1 -Reason (
+                "coreConfig must reference a file")
+            $coreConfigFullPath = $null
+        }
+    }
+
+    $hostScopes = @(Get-ScriptParameterValidateSet `
+            -Path (Join-Path $Root "tests\run_gcc_tests.ps1") `
+            -ParameterName "Scope")
+    $armScopes = @(Get-ScriptParameterValidateSet `
+            -Path (Join-Path $Root "tests\run_arm_compile.ps1") `
+            -ParameterName "Scope")
+    $presetDocument = Get-Content -LiteralPath (
+        Join-Path $Root "CMakePresets.json") -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+    $buildPresets = @($presetDocument.buildPresets |
+        ForEach-Object { [string]$_.name })
+
+    $componentsProperty = $manifest.PSObject.Properties["components"]
+    if ($null -eq $componentsProperty -or
+        $componentsProperty.Value -isnot [System.Array] -or
+        @($componentsProperty.Value).Count -eq 0) {
+        throw "verification manifest 'components' must be a non-empty array"
+    }
+
+    $seenIds = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase)
+    $configPrefixes = [System.Collections.Generic.List[string]]::new()
+    foreach ($component in @($componentsProperty.Value)) {
+        if ($null -eq $component) {
+            Add-Finding -Path $manifestPath -Line 1 -Reason (
+                "verification manifest contains an empty component")
+            continue
+        }
+
+        $idProperty = $component.PSObject.Properties["id"]
+        $componentId = if ($null -eq $idProperty) {
+            ""
+        }
+        else {
+            [string]$idProperty.Value
+        }
+        $validId = $componentId -cmatch '^[A-Za-z][A-Za-z0-9_-]*$'
+        $duplicateId = $validId -and $seenIds.Contains($componentId)
+        if (-not $validId) {
+            Add-Finding -Path $manifestPath -Line 1 -Reason (
+                "invalid component id '{0}'" -f $componentId)
+        }
+        elseif ($duplicateId) {
+            Add-Finding -Path $manifestPath -Line 1 -Reason (
+                "duplicate component id '{0}'" -f $componentId)
+        }
+
+        $fieldValues = @{}
+        foreach ($field in @(
+                "inputs",
+                "dependencies",
+                "configPrefixes",
+                "hostScopes",
+                "armScopes",
+                "buildPresets")) {
+            $property = $component.PSObject.Properties[$field]
+            if ($null -eq $property -or
+                $property.Value -isnot [System.Array]) {
+                Add-Finding -Path $manifestPath -Line 1 -Reason (
+                    "component '{0}' field '{1}' must be an array" -f
+                    $componentId, $field)
+                $fieldValues[$field] = @()
+            }
+            else {
+                $fieldValues[$field] = @($property.Value)
+            }
+        }
+
+        foreach ($dependency in @($fieldValues["dependencies"])) {
+            if ($dependency -isnot [string] -or
+                -not $seenIds.Contains($dependency)) {
+                Add-Finding -Path $manifestPath -Line 1 -Reason (
+                    "component '{0}' dependency '{1}' must reference an earlier component id" -f
+                    $componentId, $dependency)
+            }
+        }
+        if ($validId -and -not $duplicateId) {
+            [void]$seenIds.Add($componentId)
+        }
+
+        foreach ($entry in @($fieldValues["inputs"])) {
+            [void](Test-ManifestInputPath -ManifestPath $manifestPath `
+                    -Field ("component '{0}' inputs" -f $componentId) `
+                    -Entry $entry)
+        }
+        foreach ($scopeRule in @(
+                @{
+                    Field = "hostScopes"
+                    Valid = $hostScopes
+                    Kind = "host test"
+                },
+                @{
+                    Field = "armScopes"
+                    Valid = $armScopes
+                    Kind = "ARM compile"
+                })) {
+            foreach ($scope in @($fieldValues[$scopeRule.Field])) {
+                if ($scope -isnot [string] -or $scope -notin $scopeRule.Valid) {
+                    Add-Finding -Path $manifestPath -Line 1 -Reason (
+                        "component '{0}' references unknown {1} scope '{2}'" -f
+                        $componentId, $scopeRule.Kind, $scope)
+                }
+            }
+        }
+        foreach ($preset in @($fieldValues["buildPresets"])) {
+            if ($preset -isnot [string] -or $preset -notin $buildPresets) {
+                Add-Finding -Path $manifestPath -Line 1 -Reason (
+                    "component '{0}' references unknown build preset '{1}'" -f
+                    $componentId, $preset)
+            }
+        }
+        foreach ($prefix in @($fieldValues["configPrefixes"])) {
+            if ($prefix -isnot [string] -or
+                $prefix -cnotmatch '^TEMPLATE_[A-Za-z0-9_]+$') {
+                Add-Finding -Path $manifestPath -Line 1 -Reason (
+                    "component '{0}' has invalid config prefix '{1}'" -f
+                    $componentId, $prefix)
+            }
+            else {
+                $configPrefixes.Add($prefix)
+            }
+        }
+    }
+
+    if ($null -ne $coreConfigFullPath) {
+        $macroMatches = @(Select-String -LiteralPath $coreConfigFullPath `
+                -Pattern '^\s*#\s*define\s+(TEMPLATE_[A-Za-z0-9_]+)\b' |
+            Where-Object {
+                $_.Matches[0].Groups[1].Value -cne "TEMPLATE_CORE_CONFIG_H"
+            })
+        foreach ($macroMatch in $macroMatches) {
+            $macroName = $macroMatch.Matches[0].Groups[1].Value
+            $covered = @($configPrefixes | Where-Object {
+                    $macroName.StartsWith(
+                        $_,
+                        [System.StringComparison]::Ordinal)
+                }).Count -ne 0
+            if (-not $covered) {
+                Add-Finding -Path $coreConfigFullPath `
+                    -Line $macroMatch.LineNumber -Reason (
+                    "core configuration macro '{0}' is not covered by any component configPrefixes" -f
+                    $macroName)
+            }
+        }
+    }
+}
+catch {
+    Add-Finding -Path $manifestPath -Line 1 -Reason (
+        "cannot validate verification manifest: {0}" -f $_.Exception.Message)
 }
 
 $tasksPath = Join-Path $Root ".vscode\tasks.json"
@@ -456,3 +793,4 @@ Write-Host "       Upper layers do not own MCU resources; VS Code task reference
 Write-Host "       APP/Mode stay pure; Task owns FreeRTOS execution without bypassing Device."
 Write-Host "       No source glob, forbidden source name, or precompiled library found."
 Write-Host "       Config, docs, and generated build output have separate enforced roots."
+Write-Host "       Incremental verification inputs, scopes, dependencies, and presets are valid."

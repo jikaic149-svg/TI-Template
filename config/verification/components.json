@@ -1,9 +1,8 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "globalInputs": [
     "CMakeLists.txt",
     "CMakePresets.json",
-    "config/core_config.h",
     "config/cmake",
     "config/verification",
     "tests/run_gcc_tests.ps1",
@@ -12,6 +11,7 @@
     "tools/check_template.ps1",
     "tools/lib"
   ],
+  "coreConfig": "config/core_config.h",
   "contextInputs": [
     "AGENTS.md",
     "README.md",
@@ -32,6 +32,7 @@
         "docs/WATCHDOG.md"
       ],
       "dependencies": [],
+      "configPrefixes": [],
       "hostScopes": ["Watchdog"],
       "armScopes": ["Watchdog"],
       "buildPresets": [
@@ -51,9 +52,13 @@
         "tests/mode_communicate"
       ],
       "dependencies": [],
+      "configPrefixes": [],
       "hostScopes": ["Communication"],
       "armScopes": ["Communication"],
-      "buildPresets": []
+      "buildPresets": [
+        "build-g3519-feature-smoke-debug",
+        "build-g3519-feature-smoke-release"
+      ]
     },
     {
       "id": "IMU",
@@ -67,9 +72,16 @@
         "tests/lingke_m0"
       ],
       "dependencies": [],
+      "configPrefixes": [
+        "TEMPLATE_MAHONY_",
+        "TEMPLATE_IMU_FUSION_"
+      ],
       "hostScopes": ["IMU"],
       "armScopes": ["IMU"],
-      "buildPresets": []
+      "buildPresets": [
+        "build-g3519-feature-smoke-debug",
+        "build-g3519-feature-smoke-release"
+      ]
     },
     {
       "id": "Motor",
@@ -77,19 +89,21 @@
       "inputs": [
         "Device/Actuator/Motor",
         "BSP/bsp_motor.h",
-        "BSP/MSPM0G3507/bsp_motor.c",
-        "BSP/MSPM0G3519/bsp_motor.c",
+        "BSP/MSPM0G3519/bsp_motor_tb6612.c",
         "BSP/MSPM0G3519/bsp_motor_at8236.c",
         "tests/motor_at8236",
         "tests/motor_tb6612",
         "tests/motor_models"
       ],
       "dependencies": [],
+      "configPrefixes": [],
       "hostScopes": ["Motor"],
-      "armScopes": [],
+      "armScopes": ["Motor"],
       "buildPresets": [
         "build-g3519-at8236-debug",
-        "build-g3519-at8236-release"
+        "build-g3519-at8236-release",
+        "build-g3519-feature-smoke-debug",
+        "build-g3519-feature-smoke-release"
       ]
     },
     {
@@ -100,14 +114,19 @@
         "Mode/Car/Control",
         "Mode/Car/Navigation",
         "Mode/Car/Spin",
+        "Mode/Car/CMakeLists.txt",
         "Mode/Car/include",
         "Mode/Car/src",
         "tests/fused_navigation_mode"
       ],
       "dependencies": ["IMU", "Motor"],
+      "configPrefixes": ["TEMPLATE_CAR_"],
       "hostScopes": ["Navigation"],
-      "armScopes": [],
-      "buildPresets": []
+      "armScopes": ["Navigation"],
+      "buildPresets": [
+        "build-g3519-feature-smoke-debug",
+        "build-g3519-feature-smoke-release"
+      ]
     },
     {
       "id": "LineTracking",
@@ -119,23 +138,71 @@
         "tests/line_tracking_uart"
       ],
       "dependencies": ["Navigation"],
+      "configPrefixes": ["TEMPLATE_LINE_"],
       "hostScopes": ["LineTracking"],
-      "armScopes": [],
-      "buildPresets": []
+      "armScopes": ["LineTracking"],
+      "buildPresets": [
+        "build-g3519-feature-smoke-debug",
+        "build-g3519-feature-smoke-release"
+      ]
+    },
+    {
+      "id": "Gimbal",
+      "description": "云台控制、稳定、视觉、标定与调度 Mode",
+      "inputs": [
+        "Mode/Gimbal"
+      ],
+      "dependencies": [],
+      "configPrefixes": ["TEMPLATE_GIMBAL_"],
+      "hostScopes": [],
+      "armScopes": ["Gimbal"],
+      "buildPresets": [
+        "build-g3519-feature-smoke-debug",
+        "build-g3519-feature-smoke-release"
+      ]
+    },
+    {
+      "id": "Optional",
+      "description": "未归入业务组件的通用算法、输入、执行器与存储 Device",
+      "inputs": [
+        "APP/Algorithm/CMakeLists.txt",
+        "APP/Algorithm/ADRC",
+        "APP/Algorithm/CRC",
+        "APP/Algorithm/Filter",
+        "APP/Algorithm/LQR",
+        "APP/Algorithm/Packet",
+        "APP/Algorithm/ReliableLink",
+        "APP/Algorithm/SPSC_Ring",
+        "Device/CMakeLists.txt",
+        "Device/Input/Key",
+        "Device/Actuator/LED",
+        "Device/Actuator/PowerSwitch",
+        "Device/Actuator/QD4310",
+        "Device/Actuator/RGB",
+        "Device/Actuator/Servo",
+        "Device/Sensor/Encoder",
+        "Device/Storage/Flash"
+      ],
+      "dependencies": [],
+      "configPrefixes": [],
+      "hostScopes": [],
+      "armScopes": ["Optional"],
+      "buildPresets": [
+        "build-g3519-feature-smoke-debug",
+        "build-g3519-feature-smoke-release"
+      ]
     },
     {
       "id": "Firmware",
-      "description": "模板公共胶水、BSP、Task、FreeRTOS 配置和未单列组件",
+      "description": "模板公共胶水、BSP、Task 与 FreeRTOS",
       "inputs": [
         "main.c",
-        "APP",
         "BSP",
-        "Device",
-        "Mode",
         "Task",
-        "FreeRTOS/Config"
+        "FreeRTOS"
       ],
-      "dependencies": ["Watchdog", "Communication", "IMU", "Motor", "Navigation", "LineTracking"],
+      "dependencies": ["Watchdog"],
+      "configPrefixes": ["TEMPLATE_TASK_"],
       "hostScopes": [],
       "armScopes": [],
       "buildPresets": [

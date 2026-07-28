@@ -1,10 +1,10 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $script:WorkspaceRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $script:ManifestPath = Join-Path $script:WorkspaceRoot "config\verification\components.json"
 $script:CacheDirectory = Join-Path $script:WorkspaceRoot "build\.verify-cache"
-$script:CacheSchemaVersion = 1
+$script:CacheSchemaVersion = 2
 
 function Get-Sha256Text {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
@@ -39,12 +39,19 @@ function Read-VerificationManifest {
     if ($manifest.schemaVersion -ne $script:CacheSchemaVersion) {
         throw "Unsupported verification manifest schema: $($manifest.schemaVersion)"
     }
+    if (@($manifest.PSObject.Properties.Name) -notcontains "coreConfig" -or
+        [string]::IsNullOrWhiteSpace([string]$manifest.coreConfig)) {
+        throw "Verification manifest must define coreConfig"
+    }
 
     $known = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::OrdinalIgnoreCase)
     foreach ($component in $manifest.components) {
         if (-not $known.Add([string]$component.id)) {
             throw "Duplicate verification component: $($component.id)"
+        }
+        if (@($component.PSObject.Properties.Name) -notcontains "configPrefixes") {
+            throw "Component '$($component.id)' must define configPrefixes"
         }
         foreach ($dependency in $component.dependencies) {
             if (-not $known.Contains([string]$dependency)) {
@@ -82,6 +89,11 @@ function Get-InputSnapshot {
     }
 
     foreach ($relative in @($files.Keys) | Sort-Object) {
+        # Keep Markdown discoverable in Files without invalidating compile-oriented caches.
+        if ([string]::Equals([System.IO.Path]::GetExtension($relative), ".md",
+                [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
         $fileHash = (Get-FileHash -LiteralPath $files[$relative] -Algorithm SHA256).Hash.ToLowerInvariant()
         $hashLines.Add("file:$relative`:$fileHash")
     }
@@ -89,6 +101,84 @@ function Get-InputSnapshot {
     return [pscustomobject]@{
         Hash = Get-Sha256Text -Text ($hashLines -join "`n")
         Files = @($files.Keys | Sort-Object)
+    }
+}
+
+function Get-CoreConfigSnapshot {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [object[]]$Prefixes = @()
+    )
+
+    $fullPath = Join-Path $script:WorkspaceRoot $Path
+    if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+        throw "Core configuration is missing: $fullPath"
+    }
+
+    $relative = Get-RelativePath -Path $fullPath
+    $prefixSet = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal)
+    foreach ($prefixValue in $Prefixes) {
+        $prefix = ([string]$prefixValue).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($prefix)) {
+            [void]$prefixSet.Add($prefix)
+        }
+    }
+
+    $hashLines = [System.Collections.Generic.List[string]]::new()
+    $hashLines.Add("core-config:$relative")
+    foreach ($prefix in @($prefixSet) | Sort-Object) {
+        $hashLines.Add("prefix:$prefix")
+    }
+
+    $lines = [System.IO.File]::ReadAllLines($fullPath, [System.Text.Encoding]::UTF8)
+    for ($index = 0; $index -lt $lines.Length; $index++) {
+        $line = $lines[$index]
+        if ($line -notmatch '^\s*#\s*([A-Za-z]+)\b(.*)$') {
+            continue
+        }
+
+        $directive = $Matches[1].ToLowerInvariant()
+        $remainder = $Matches[2]
+        $directiveLines = [System.Collections.Generic.List[string]]::new()
+        $directiveLines.Add($line.Trim())
+        while ($directiveLines[$directiveLines.Count - 1] -match '\\\s*$' -and
+            ($index + 1) -lt $lines.Length) {
+            $index++
+            $directiveLines.Add($lines[$index].Trim())
+        }
+
+        # Non-define directives are shared structure; parameter defines are owner-specific.
+        $includeDirective = ($directive -ne "define")
+        if ($directive -eq "define") {
+            if ($remainder -notmatch '^\s*([A-Za-z_][A-Za-z0-9_]*)(.*)$') {
+                $includeDirective = $true
+            }
+            else {
+                $macroName = $Matches[1]
+                $replacement = $Matches[2]
+                $includeDirective = [string]::IsNullOrWhiteSpace($replacement) -or
+                    $replacement.TrimStart().StartsWith("//") -or
+                    $replacement.TrimStart().StartsWith("/*")
+                if (-not $includeDirective) {
+                    foreach ($prefix in $prefixSet) {
+                        if ($macroName.StartsWith($prefix, [System.StringComparison]::Ordinal)) {
+                            $includeDirective = $true
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($includeDirective) {
+            $hashLines.Add("directive:" + ($directiveLines -join "`n"))
+        }
+    }
+
+    return [pscustomobject]@{
+        Hash = Get-Sha256Text -Text ($hashLines -join "`n")
+        Files = @($relative)
     }
 }
 
@@ -139,6 +229,8 @@ function Get-ComponentRecords {
 
     foreach ($component in $Manifest.components) {
         $ownSnapshot = Get-InputSnapshot -Entries @($component.inputs)
+        $configSnapshot = Get-CoreConfigSnapshot -Path ([string]$Manifest.coreConfig) `
+            -Prefixes @($component.configPrefixes)
         $dependencyHashes = [ordered]@{}
         foreach ($dependency in $component.dependencies) {
             $dependencyHashes[[string]$dependency] = $byId[[string]$dependency].EffectiveHash
@@ -148,21 +240,24 @@ function Get-ComponentRecords {
             "component=$($component.id)",
             "global=$($globalSnapshot.Hash)",
             "environment=$($environment.Hash)",
+            "config=$($configSnapshot.Hash)",
             "own=$($ownSnapshot.Hash)"
         )
         foreach ($dependency in $dependencyHashes.Keys) {
             $effectiveLines += "dependency:$dependency=$($dependencyHashes[$dependency])"
         }
 
+        $recordFiles = @($ownSnapshot.Files) + @($configSnapshot.Files)
         $record = [pscustomobject]@{
             Definition = $component
             OwnInputHash = $ownSnapshot.Hash
             GlobalInputHash = $globalSnapshot.Hash
+            ConfigInputHash = $configSnapshot.Hash
             EnvironmentHash = $environment.Hash
             EnvironmentLines = $environment.Lines
             DependencyHashes = $dependencyHashes
             EffectiveHash = Get-Sha256Text -Text ($effectiveLines -join "`n")
-            Files = $ownSnapshot.Files
+            Files = @($recordFiles | Sort-Object -Unique)
             State = $null
         }
         $records.Add($record)
@@ -194,6 +289,7 @@ function Get-RecordState {
     $propertyNames = @($cache.PSObject.Properties.Name)
     if ($propertyNames -notcontains "schemaVersion" -or
         $propertyNames -notcontains "status" -or
+        $propertyNames -notcontains "configInputHash" -or
         $propertyNames -notcontains "effectiveHash") {
         return [pscustomobject]@{ Fresh = $false; Reason = "CACHE SCHEMA"; Cache = $cache }
     }
@@ -209,6 +305,9 @@ function Get-RecordState {
         elseif ($propertyNames -contains "globalInputHash" -and
             [string]$cache.globalInputHash -ne [string]$Record.GlobalInputHash) {
             $reason = "GLOBAL INPUT"
+        }
+        elseif ([string]$cache.configInputHash -ne [string]$Record.ConfigInputHash) {
+            $reason = "CONFIG CHANGED"
         }
         elseif ($propertyNames -contains "ownInputHash" -and
             [string]$cache.ownInputHash -eq [string]$Record.OwnInputHash) {
@@ -294,12 +393,18 @@ function Invoke-CheckedCommand {
     param(
         [Parameter(Mandatory = $true)][string]$Label,
         [Parameter(Mandatory = $true)][string]$Command,
-        [string[]]$Arguments = @()
+        [string[]]$Arguments = @(),
+        [hashtable]$Parameters
     )
 
     Write-Host "[RUN]  $Label" -ForegroundColor Cyan
     $global:LASTEXITCODE = 0
-    & $Command @Arguments
+    if ($null -ne $Parameters) {
+        & $Command @Parameters
+    }
+    else {
+        & $Command @Arguments
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "$Label failed with exit code $LASTEXITCODE"
     }
@@ -332,6 +437,7 @@ function Write-ComponentCache {
         status = "PASS"
         ownInputHash = $Record.OwnInputHash
         globalInputHash = $Record.GlobalInputHash
+        configInputHash = $Record.ConfigInputHash
         environmentHash = $Record.EnvironmentHash
         dependencyHashes = $Record.DependencyHashes
         effectiveHash = $Record.EffectiveHash
@@ -364,20 +470,20 @@ function Invoke-ComponentVerification {
         foreach ($scope in @($Record.Definition.hostScopes)) {
             Invoke-CheckedCommand -Label "$id host tests ($scope)" `
                 -Command (Join-Path $script:WorkspaceRoot "tests\run_gcc_tests.ps1") `
-                -Arguments @("-Scope", [string]$scope)
+                -Parameters @{ Scope = [string]$scope }
             $checks.Add("host:$scope")
         }
         foreach ($scope in @($Record.Definition.armScopes)) {
             Invoke-CheckedCommand -Label "$id ARM strict compile ($scope)" `
                 -Command (Join-Path $script:WorkspaceRoot "tests\run_arm_compile.ps1") `
-                -Arguments @("-Scope", [string]$scope)
+                -Parameters @{ Scope = [string]$scope }
             $checks.Add("arm:$scope")
         }
         foreach ($presetValue in @($Record.Definition.buildPresets)) {
             $preset = [string]$presetValue
             if ($CompletedBuilds.Contains($preset)) {
                 Write-Host "[REUSE] build preset $preset" -ForegroundColor DarkGreen
-                $checks.Add("build:$preset:reused")
+                $checks.Add("build:${preset}:reused")
                 continue
             }
             $configurePreset = if ($preset.StartsWith("build-")) { $preset.Substring(6) } else { $preset }
@@ -436,15 +542,47 @@ function New-AiContext {
     $parent = Split-Path -Parent $OutputPath
     New-Item -ItemType Directory -Force -Path $parent | Out-Null
 
-    $status = (& git -C $script:WorkspaceRoot status --short --branch --untracked-files=all 2>&1 | Out-String).TrimEnd()
-    $diffStat = (& git -C $script:WorkspaceRoot diff --stat 2>&1 | Out-String).TrimEnd()
-    $head = (& git -C $script:WorkspaceRoot rev-parse HEAD 2>&1 | Out-String).Trim()
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $status = (& git -C $script:WorkspaceRoot status --short --branch --untracked-files=all 2>$null |
+            Out-String).TrimEnd()
+        $statusOk = ($LASTEXITCODE -eq 0)
+        $diffStat = (& git -C $script:WorkspaceRoot diff HEAD --stat 2>$null | Out-String).TrimEnd()
+        $diffStatOk = ($LASTEXITCODE -eq 0)
+        $head = (& git -C $script:WorkspaceRoot rev-parse HEAD 2>$null | Out-String).Trim()
+        $headOk = ($LASTEXITCODE -eq 0)
+        $trackedChangedPaths = @(& git -C $script:WorkspaceRoot -c core.quotepath=false `
+                diff HEAD --name-only --diff-filter=ACMRTUXB 2>$null)
+        $trackedChangedPathsOk = ($LASTEXITCODE -eq 0)
+        $untrackedPaths = @(& git -C $script:WorkspaceRoot -c core.quotepath=false `
+                ls-files --others --exclude-standard 2>$null)
+        $untrackedPathsOk = ($LASTEXITCODE -eq 0)
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if (-not $statusOk -or -not $diffStatOk -or -not $headOk -or
+        -not $trackedChangedPathsOk -or -not $untrackedPathsOk) {
+        throw "Failed to read Git context"
+    }
     $selectedRecords = @($Records | Where-Object { $ScopeInfo.Selected.Contains([string]$_.Definition.id) })
     $focusFiles = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::OrdinalIgnoreCase)
     foreach ($record in $selectedRecords) {
         foreach ($file in $record.Files) {
             [void]$focusFiles.Add([string]$file)
+        }
+    }
+    foreach ($changedPathValue in @($trackedChangedPaths) + @($untrackedPaths)) {
+        $changedPath = [string]$changedPathValue
+        if (-not [string]::Equals([System.IO.Path]::GetExtension($changedPath), ".md",
+                [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+        $fullPath = Join-Path $script:WorkspaceRoot $changedPath
+        if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+            [void]$focusFiles.Add((Get-RelativePath -Path $fullPath))
         }
     }
     foreach ($entry in $Manifest.contextInputs) {
@@ -513,18 +651,92 @@ function Show-BaselineStatus {
     param([Parameter(Mandatory = $true)][object[]]$Records)
 
     $stale = @($Records | Where-Object { -not $_.State.Fresh })
-    $gitStatus = @(& git -C $script:WorkspaceRoot status --short --untracked-files=all 2>$null)
-    $diffOutput = (& git -C $script:WorkspaceRoot diff --check 2>&1 | Out-String).TrimEnd()
-    $diffOk = ($LASTEXITCODE -eq 0)
+    $cleanEvidenceIssues = [System.Collections.Generic.List[string]]::new()
+    $buildComponentCount = 0
+    foreach ($record in $Records) {
+        $presets = @($record.Definition.buildPresets | ForEach-Object { [string]$_ })
+        if ($presets.Count -eq 0) {
+            continue
+        }
+        $buildComponentCount++
+        if (-not $record.State.Fresh) {
+            continue
+        }
+
+        $cache = $record.State.Cache
+        $properties = @($cache.PSObject.Properties.Name)
+        $cleanBuildProperty = $cache.PSObject.Properties["cleanBuild"]
+        if ($null -eq $cleanBuildProperty -or
+            $cleanBuildProperty.Value -isnot [bool] -or
+            -not [bool]$cleanBuildProperty.Value) {
+            $cleanEvidenceIssues.Add("$($record.Definition.id) (cleanBuild is not true)")
+        }
+
+        if ($properties -notcontains "checks") {
+            $cleanEvidenceIssues.Add("$($record.Definition.id) (checks are missing)")
+            continue
+        }
+        $checks = @($cache.checks | ForEach-Object { [string]$_ })
+        $checkSet = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($check in $checks) {
+            [void]$checkSet.Add($check)
+        }
+        $allowedBuildChecks = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($preset in $presets) {
+            $builtCheck = "build:$preset"
+            $reusedCheck = "build:${preset}:reused"
+            [void]$allowedBuildChecks.Add($builtCheck)
+            [void]$allowedBuildChecks.Add($reusedCheck)
+            if (-not $checkSet.Contains($builtCheck) -and
+                -not $checkSet.Contains($reusedCheck)) {
+                $cleanEvidenceIssues.Add(
+                    "$($record.Definition.id) (missing build evidence for $preset)")
+            }
+        }
+        foreach ($check in $checks) {
+            if ($check.StartsWith("build:", [System.StringComparison]::OrdinalIgnoreCase) -and
+                -not $allowedBuildChecks.Contains($check)) {
+                $cleanEvidenceIssues.Add(
+                    "$($record.Definition.id) (unexpected build evidence '$check')")
+            }
+        }
+    }
+    $cleanEvidenceOk = ($stale.Count -eq 0 -and $cleanEvidenceIssues.Count -eq 0)
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $gitStatus = @(& git -C $script:WorkspaceRoot status --short --untracked-files=all 2>$null)
+        $gitStatusOk = ($LASTEXITCODE -eq 0)
+        $diffOutput = (& git -C $script:WorkspaceRoot diff HEAD --check 2>&1 | Out-String).TrimEnd()
+        $diffOk = ($LASTEXITCODE -eq 0)
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if (-not $gitStatusOk) {
+        throw "git status failed"
+    }
     Show-CacheStatus -Records $Records
     Write-Host ""
     Write-Host ("Git worktree changes: {0}" -f $gitStatus.Count)
     Write-Host ("Current verification cache: {0}" -f $(if ($stale.Count -eq 0) { "PASS" } else { "STALE" }))
-    Write-Host ("git diff --check: {0}" -f $(if ($diffOk) { "PASS" } else { "FAIL" }))
+    if ($cleanEvidenceOk) {
+        Write-Host ("Clean verification evidence: PASS ({0}/{0} build components; shared presets may be reused)" -f `
+            $buildComponentCount)
+    }
+    else {
+        Write-Host "Clean verification evidence: FAIL" -ForegroundColor Yellow
+        if ($cleanEvidenceIssues.Count -ne 0) {
+            Write-Host ("       {0}" -f ($cleanEvidenceIssues -join "; ")) -ForegroundColor Yellow
+        }
+    }
+    Write-Host ("git diff HEAD --check: {0}" -f $(if ($diffOk) { "PASS" } else { "FAIL" }))
     if (-not $diffOk -and -not [string]::IsNullOrWhiteSpace($diffOutput)) {
         Write-Host $diffOutput -ForegroundColor Red
     }
-    if ($stale.Count -eq 0 -and $diffOk) {
+    if ($cleanEvidenceOk -and $diffOk) {
         Write-Host "Baseline candidate is ready for human diff review." -ForegroundColor Green
     }
     else {
@@ -564,8 +776,8 @@ function Invoke-TemplateProjectTool {
             "Verify" {
                 Invoke-CheckedCommand -Label "template architecture" `
                     -Command (Join-Path $script:WorkspaceRoot "tools\check_template.ps1")
-                Invoke-CheckedCommand -Label "git diff --check" -Command "git" `
-                    -Arguments @("-C", $script:WorkspaceRoot, "diff", "--check")
+                Invoke-CheckedCommand -Label "git diff HEAD --check" -Command "git" `
+                    -Arguments @("-C", $script:WorkspaceRoot, "diff", "HEAD", "--check")
 
                 $completedBuilds = [System.Collections.Generic.HashSet[string]]::new(
                     [System.StringComparer]::OrdinalIgnoreCase)

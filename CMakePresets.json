@@ -117,6 +117,86 @@
       "cacheVariables": {
         "MSPM0_MOTOR_DRIVER": "AT8236"
       }
+    },
+    {
+      "name": "g3519-feature-smoke-debug",
+      "displayName": "MSPM0G3519 Feature Smoke - Debug",
+      "inherits": "g3519-debug",
+      "binaryDir": "${sourceDir}/build/MSPM0G3519-FeatureSmoke/Debug",
+      "cacheVariables": {
+        "TEMPLATE_ENABLE_ALGORITHM_SPSC_RING": true,
+        "TEMPLATE_ENABLE_ALGORITHM_PACKET": true,
+        "TEMPLATE_ENABLE_ALGORITHM_RELIABLE_LINK": true,
+        "TEMPLATE_ENABLE_ALGORITHM_PID": true,
+        "TEMPLATE_ENABLE_ALGORITHM_FILTER": true,
+        "TEMPLATE_ENABLE_ALGORITHM_MAHONY": true,
+        "TEMPLATE_ENABLE_ALGORITHM_LINE_TRACKING": true,
+        "TEMPLATE_ENABLE_ALGORITHM_LQR": true,
+        "TEMPLATE_ENABLE_ALGORITHM_ADRC": true,
+        "TEMPLATE_ENABLE_ALGORITHM_CRC": true,
+        "TEMPLATE_ENABLE_MODE_CAR": true,
+        "TEMPLATE_ENABLE_MODE_GIMBAL": true,
+        "TEMPLATE_ENABLE_MODE_COMMUNICATE": true,
+        "TEMPLATE_ENABLE_DEVICE_KEY": true,
+        "TEMPLATE_ENABLE_DEVICE_MOTOR": true,
+        "TEMPLATE_ENABLE_DEVICE_LED": true,
+        "TEMPLATE_ENABLE_DEVICE_RGB": true,
+        "TEMPLATE_ENABLE_DEVICE_SERVO": true,
+        "TEMPLATE_ENABLE_DEVICE_POWER_SWITCH": true,
+        "TEMPLATE_ENABLE_DEVICE_QD4310": true,
+        "TEMPLATE_ENABLE_DEVICE_ENCODER": true,
+        "TEMPLATE_ENABLE_DEVICE_LINE_TRACKING": true,
+        "TEMPLATE_ENABLE_DEVICE_XINLIU_T8": true,
+        "TEMPLATE_ENABLE_DEVICE_JY61P": true,
+        "TEMPLATE_ENABLE_DEVICE_LINGKE_M0": true,
+        "TEMPLATE_ENABLE_DEVICE_BMI088": true,
+        "TEMPLATE_ENABLE_DEVICE_ICM45686": true,
+        "TEMPLATE_ENABLE_DEVICE_VISION": true,
+        "TEMPLATE_ENABLE_DEVICE_IMU": true,
+        "TEMPLATE_ENABLE_DEVICE_SERIAL": true,
+        "TEMPLATE_ENABLE_DEVICE_LORA": true,
+        "TEMPLATE_ENABLE_DEVICE_FLASH": true
+      }
+    },
+    {
+      "name": "g3519-feature-smoke-release",
+      "displayName": "MSPM0G3519 Feature Smoke - Release",
+      "inherits": "g3519-release",
+      "binaryDir": "${sourceDir}/build/MSPM0G3519-FeatureSmoke/Release",
+      "cacheVariables": {
+        "TEMPLATE_ENABLE_ALGORITHM_SPSC_RING": true,
+        "TEMPLATE_ENABLE_ALGORITHM_PACKET": true,
+        "TEMPLATE_ENABLE_ALGORITHM_RELIABLE_LINK": true,
+        "TEMPLATE_ENABLE_ALGORITHM_PID": true,
+        "TEMPLATE_ENABLE_ALGORITHM_FILTER": true,
+        "TEMPLATE_ENABLE_ALGORITHM_MAHONY": true,
+        "TEMPLATE_ENABLE_ALGORITHM_LINE_TRACKING": true,
+        "TEMPLATE_ENABLE_ALGORITHM_LQR": true,
+        "TEMPLATE_ENABLE_ALGORITHM_ADRC": true,
+        "TEMPLATE_ENABLE_ALGORITHM_CRC": true,
+        "TEMPLATE_ENABLE_MODE_CAR": true,
+        "TEMPLATE_ENABLE_MODE_GIMBAL": true,
+        "TEMPLATE_ENABLE_MODE_COMMUNICATE": true,
+        "TEMPLATE_ENABLE_DEVICE_KEY": true,
+        "TEMPLATE_ENABLE_DEVICE_MOTOR": true,
+        "TEMPLATE_ENABLE_DEVICE_LED": true,
+        "TEMPLATE_ENABLE_DEVICE_RGB": true,
+        "TEMPLATE_ENABLE_DEVICE_SERVO": true,
+        "TEMPLATE_ENABLE_DEVICE_POWER_SWITCH": true,
+        "TEMPLATE_ENABLE_DEVICE_QD4310": true,
+        "TEMPLATE_ENABLE_DEVICE_ENCODER": true,
+        "TEMPLATE_ENABLE_DEVICE_LINE_TRACKING": true,
+        "TEMPLATE_ENABLE_DEVICE_XINLIU_T8": true,
+        "TEMPLATE_ENABLE_DEVICE_JY61P": true,
+        "TEMPLATE_ENABLE_DEVICE_LINGKE_M0": true,
+        "TEMPLATE_ENABLE_DEVICE_BMI088": true,
+        "TEMPLATE_ENABLE_DEVICE_ICM45686": true,
+        "TEMPLATE_ENABLE_DEVICE_VISION": true,
+        "TEMPLATE_ENABLE_DEVICE_IMU": true,
+        "TEMPLATE_ENABLE_DEVICE_SERIAL": true,
+        "TEMPLATE_ENABLE_DEVICE_LORA": true,
+        "TEMPLATE_ENABLE_DEVICE_FLASH": true
+      }
     }
   ],
   "buildPresets": [
@@ -148,6 +228,16 @@
     {
       "name": "build-g3519-at8236-release",
       "configurePreset": "g3519-at8236-release",
+      "jobs": 8
+    },
+    {
+      "name": "build-g3519-feature-smoke-debug",
+      "configurePreset": "g3519-feature-smoke-debug",
+      "jobs": 8
+    },
+    {
+      "name": "build-g3519-feature-smoke-release",
+      "configurePreset": "g3519-feature-smoke-release",
       "jobs": 8
     }
   ]

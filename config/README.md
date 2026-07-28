@@ -8,6 +8,11 @@
 - `openocd/`：DAPLink/XDS110 的工程配置与无序列号示例；
 - `verification/`：增量验证的组件范围、依赖和构建 preset 清单。
 
+增量验证不会拆散 `core_config.h`。`components.json` 只按宏前缀判断某一类参数属于哪个
+验证组件：例如 `TEMPLATE_CAR_` 归车辆验证，`TEMPLATE_GIMBAL_` 归云台验证。这样修改
+一个车辆 PID 时，不会重复验证与它无关的通信和云台代码；参数的编辑入口仍然只有
+`core_config.h`。
+
 `core_config.h` 只收录源码当前实际消费、需要经常整定的默认值，例如 Task 周期、
 优先级和栈，PID/Kalman/滤波参数，以及阈值、限幅和超时。参数按大类集中，不为每个
 算法单独拆文件；每组参数必须注释用途、单位、约束和影响，不得加入未使用的占位项。
