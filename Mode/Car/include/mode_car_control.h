@@ -75,6 +75,94 @@ bool Mode_Car_SpeedController_Update(
     const Mode_Car_SpeedControllerInput *input,
     Mode_Car_SpeedControllerOutput *output);
 
+/*
+ * Odometry-driven longitudinal profile.  The profile owns only the forward
+ * reference speed; steering remains an independent outer-loop correction.
+ * Start/stop commands change the reference with a bounded acceleration, and
+ * a distance goal automatically applies a braking envelope before the goal.
+ */
+typedef enum {
+    MODE_CAR_PROFILE_IDLE = 0,
+    MODE_CAR_PROFILE_ACCELERATING,
+    MODE_CAR_PROFILE_CRUISING,
+    MODE_CAR_PROFILE_BRAKING,
+    MODE_CAR_PROFILE_STOPPED,
+} Mode_Car_LinearProfileState;
+
+typedef struct {
+    float maximum_speed_mm_per_second;
+    float acceleration_up_mm_per_second2;
+    float acceleration_down_mm_per_second2;
+    float guard_distance_mm;
+    float preview_time_seconds;
+    float stopped_speed_threshold_mm_per_second;
+} Mode_Car_LinearProfileConfig;
+
+typedef struct {
+    float dt_seconds;
+    /* Absolute mean wheel distance from the encoder Device. */
+    float odometry_distance_mm;
+    float measured_speed_mm_per_second;
+} Mode_Car_LinearProfileInput;
+
+typedef struct {
+    float reference_speed_mm_per_second;
+    float reference_acceleration_mm_per_second2;
+    float braking_speed_cap_mm_per_second;
+    float remaining_distance_mm;
+    float braking_trigger_distance_mm;
+    float announce_distance_mm;
+    Mode_Car_LinearProfileState state;
+    bool running;
+    bool braking;
+    bool stopped;
+    bool goal_valid;
+    bool valid;
+} Mode_Car_LinearProfileOutput;
+
+typedef struct {
+    Mode_Car_LinearProfileConfig config;
+    Mode_Car_LinearProfileOutput output;
+    float start_distance_mm;
+    float goal_distance_mm;
+    float cruise_speed_mm_per_second;
+    bool initialized;
+    bool running;
+    bool stop_requested;
+    bool goal_valid;
+} Mode_Car_LinearSpeedProfile;
+
+Mode_Car_LinearProfileConfig
+Mode_Car_LinearProfile_DefaultConfig(void);
+bool Mode_Car_LinearSpeedProfile_Init(
+    Mode_Car_LinearSpeedProfile *profile,
+    const Mode_Car_LinearProfileConfig *config);
+void Mode_Car_LinearSpeedProfile_Reset(
+    Mode_Car_LinearSpeedProfile *profile);
+bool Mode_Car_LinearSpeedProfile_Start(
+    Mode_Car_LinearSpeedProfile *profile,
+    float odometry_distance_mm,
+    float cruise_speed_mm_per_second);
+/* Change the cruise cap while running.  The profile still applies the same
+ * acceleration/deceleration limits, so a route segment change cannot create a
+ * step in the reference speed. */
+bool Mode_Car_LinearSpeedProfile_SetCruiseSpeed(
+    Mode_Car_LinearSpeedProfile *profile,
+    float cruise_speed_mm_per_second);
+/* The goal is an absolute encoder-distance value in the same unit as the
+ * Update input, so it can be shared by scoring-point and run-out planners. */
+bool Mode_Car_LinearSpeedProfile_SetGoal(
+    Mode_Car_LinearSpeedProfile *profile,
+    float goal_distance_mm);
+bool Mode_Car_LinearSpeedProfile_RequestStop(
+    Mode_Car_LinearSpeedProfile *profile,
+    float odometry_distance_mm,
+    float measured_speed_mm_per_second);
+bool Mode_Car_LinearSpeedProfile_Update(
+    Mode_Car_LinearSpeedProfile *profile,
+    const Mode_Car_LinearProfileInput *input,
+    Mode_Car_LinearProfileOutput *output);
+
 typedef struct {
     /* Outer-loop output is a differential wheel-speed target in mm/s. */
     float kp;

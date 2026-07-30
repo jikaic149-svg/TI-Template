@@ -95,6 +95,8 @@ static void Device_JY61P_Decode(
         device->snapshot.yaw_zeroed_deg = Device_JY61P_NormalizeAngle(
             device->snapshot.euler_deg[2] - device->yaw_offset_deg);
         device->snapshot.has_euler = true;
+        device->snapshot.last_euler_frame_ms = now_ms;
+        Device_JY61P_Increment(&device->snapshot.euler_frame_count);
     }
 
     device->snapshot.last_valid_frame_ms = now_ms;

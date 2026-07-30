@@ -9,6 +9,7 @@ param(
         "Display",
         "Navigation",
         "LineTracking",
+        "SpeedProfile",
         "Gimbal",
         "Optional"
     )]
@@ -79,6 +80,7 @@ $includes = @(
     "Device\Communication\PeerLink",
     "Device\Sensor\LineTracking",
     "Device\Sensor\LineTracking\XinliuT8",
+    "Device\Sensor\LineTracking\YahboomTrack",
     "Device\Sensor\LineTracking\Ganwei",
     "Device\Sensor\Encoder",
     "Device\Sensor\IMU",
@@ -146,10 +148,14 @@ if (Test-ScopeEnabled -Name "Navigation") {
     $sources.Add("Mode\Car\src\mode_car_brake.c")
     $sources.Add("Mode\Car\src\mode_car_done.c")
 }
+if (Test-ScopeEnabled -Name "SpeedProfile") {
+    $sources.Add("Mode\Car\Control\mode_car_speed_profile.c")
+}
 if (Test-ScopeEnabled -Name "LineTracking") {
     $sources.Add("APP\Algorithm\LineTracking\src\algorithm_line_tracking.c")
     $sources.Add("Device\Sensor\LineTracking\device_line_tracking.c")
     $sources.Add("Device\Sensor\LineTracking\XinliuT8\device_xinliu_t8.c")
+    $sources.Add("Device\Sensor\LineTracking\YahboomTrack\device_yahboom_track.c")
     $sources.Add("Device\Sensor\LineTracking\Ganwei\device_ganwei.c")
     $sources.Add("Mode\Car\Tracking\mode_car_tracking.c")
     $sources.Add("Mode\Car\Tracking\mode_car_digital_tracking.c")

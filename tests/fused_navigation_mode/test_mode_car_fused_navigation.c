@@ -17,6 +17,7 @@ static Mode_Car_FusedNavigation make_mode(float correction_tau)
 
     config.track_width_mm = 100.0F;
     config.heading_correction_time_constant_seconds = correction_tau;
+    config.encoder_heading_correction_enabled = true;
     assert(Mode_Car_FusedNavigation_Init(&mode, &config));
     return mode;
 }
@@ -30,6 +31,7 @@ static Mode_Car_FusedNavigation make_slip_gate_mode(
 
     config.track_width_mm = 100.0F;
     config.heading_correction_time_constant_seconds = correction_tau;
+    config.encoder_heading_correction_enabled = true;
     config.slip_gate_enabled = true;
     config.slip_gate_enter_threshold_deg_per_second = 25.0F;
     config.slip_gate_exit_threshold_deg_per_second = 12.0F;
@@ -42,6 +44,7 @@ static Mode_Car_FusedNavigationInput input_zero(void)
 {
     const Mode_Car_FusedNavigationInput input = {
         .dt_seconds = 0.01F,
+        .measured_yaw_rate_valid = true,
         .lookahead_x_mm = 100.0F,
     };
     return input;
@@ -172,6 +175,45 @@ static void test_invalid_slip_gate_config_is_rejected(void)
     config.slip_gate_exit_threshold_deg_per_second =
         config.slip_gate_enter_threshold_deg_per_second;
     assert(!Mode_Car_FusedNavigation_Init(&mode, &config));
+}
+
+static void test_missing_gyro_uses_encoder_heading(void)
+{
+    Mode_Car_FusedNavigation mode = make_slip_gate_mode(2.0F, 3U);
+    Mode_Car_FusedNavigationInput input = input_zero();
+    Mode_Car_FusedNavigationOutput output;
+
+    input.right_distance_delta_mm = 1.0F;
+    input.measured_yaw_rate_deg_per_second = -100.0F;
+    input.measured_yaw_rate_valid = false;
+    assert(Mode_Car_FusedNavigation_Update(&mode, &input, &output));
+    assert(close_enough(output.pose.yaw_deg, 0.572958F, 0.001F));
+    assert(close_enough(output.gyro_heading_delta_deg, 0.0F, 0.001F));
+    assert(close_enough(
+        output.encoder_yaw_rate_deg_per_second, 57.29578F, 0.001F));
+    assert(close_enough(output.slip_residual_deg_per_second, 0.0F, 0.001F));
+    assert(!output.slip_gate_active);
+    assert(output.yaw_rate_fallback_active);
+}
+
+static void test_gyro_only_mode_rejects_missing_gyro(void)
+{
+    Mode_Car_FusedNavigation mode;
+    Mode_Car_FusedNavigationConfig config =
+        Mode_Car_FusedNavigation_DefaultConfig();
+    Mode_Car_FusedNavigationInput input = input_zero();
+    Mode_Car_FusedNavigationOutput output;
+
+    config.track_width_mm = 100.0F;
+    config.encoder_heading_correction_enabled = false;
+    assert(Mode_Car_FusedNavigation_Init(&mode, &config));
+    input.left_distance_delta_mm = 1.0F;
+    input.right_distance_delta_mm = 2.0F;
+    input.measured_yaw_rate_valid = false;
+    assert(!Mode_Car_FusedNavigation_Update(&mode, &input, &output));
+    assert(close_enough(mode.pose.x_mm, 0.0F, 0.001F));
+    assert(close_enough(mode.pose.y_mm, 0.0F, 0.001F));
+    assert(close_enough(mode.pose.yaw_deg, 0.0F, 0.001F));
 }
 
 static void test_straight_lookahead(void)
@@ -381,6 +423,8 @@ int main(void)
     test_external_rotation_uses_gyro_while_gate_is_active();
     test_slip_gate_hysteresis_and_confirmed_recovery();
     test_invalid_slip_gate_config_is_rejected();
+    test_missing_gyro_uses_encoder_heading();
+    test_gyro_only_mode_rejects_missing_gyro();
     test_straight_lookahead();
     test_left_radius_400_lookahead();
     test_front_offset_does_not_shrink_radius();

@@ -10,6 +10,7 @@ add_library(mode_car STATIC
     "Tracking/mode_car_analog_tracking.c"
     "Navigation/mode_car_fused_navigation.c"
     "Control/mode_car_speed_controller.c"
+    "Control/mode_car_speed_profile.c"
     "Control/mode_car_angle_controller.c"
     "src/mode_car_brake.c"
     "src/mode_car_done.c")

@@ -203,6 +203,8 @@ bool Mode_Car_FusedNavigation_Update(
     float gyro_delta_deg;
     float encoder_yaw_rate_deg_per_second;
     float slip_residual_deg_per_second;
+    float propagation_yaw_rate_deg_per_second;
+    float propagation_delta_deg;
     float gyro_predicted_deg;
     float innovation_deg;
     float correction_fraction;
@@ -240,23 +242,47 @@ bool Mode_Car_FusedNavigation_Update(
         ((input->right_distance_delta_mm -
              input->left_distance_delta_mm) /
             next.config.track_width_mm) * MODE_CAR_DEG_PER_RAD;
-    gyro_delta_deg =
-        input->measured_yaw_rate_deg_per_second * input->dt_seconds;
     encoder_yaw_rate_deg_per_second =
         encoder_delta_deg / input->dt_seconds;
-    slip_residual_deg_per_second = fabsf(
-        encoder_yaw_rate_deg_per_second -
-            input->measured_yaw_rate_deg_per_second);
-    gyro_predicted_deg = next.pose.yaw_deg + gyro_delta_deg;
+    gyro_delta_deg = input->measured_yaw_rate_valid ?
+        input->measured_yaw_rate_deg_per_second * input->dt_seconds : 0.0F;
     next.encoder_heading_deg += encoder_delta_deg;
-    update_slip_gate(&next, slip_residual_deg_per_second);
-    next.heading_reference_deg += next.slip_gate_active ?
-        gyro_delta_deg : encoder_delta_deg;
+    if (input->measured_yaw_rate_valid) {
+        slip_residual_deg_per_second = fabsf(
+            encoder_yaw_rate_deg_per_second -
+                input->measured_yaw_rate_deg_per_second);
+        propagation_yaw_rate_deg_per_second =
+            input->measured_yaw_rate_deg_per_second;
+        update_slip_gate(&next, slip_residual_deg_per_second);
+        next.heading_reference_deg += next.slip_gate_active ?
+            gyro_delta_deg : encoder_delta_deg;
+    }
+    else {
+        /* A gyro-only configuration must never silently become encoder yaw.
+         * The caller may keep the last pose or use another already-approved
+         * control path, but this update does not advance navigation state. */
+        if (!next.config.encoder_heading_correction_enabled) {
+            return false;
+        }
+        /* Differential odometry is the only measured heading source here.
+         * Do not manufacture a stationary gyro or retain a stale slip gate. */
+        slip_residual_deg_per_second = 0.0F;
+        propagation_yaw_rate_deg_per_second =
+            encoder_yaw_rate_deg_per_second;
+        next.slip_gate_active = false;
+        next.slip_gate_recovery_sample_count = 0U;
+        next.heading_reference_deg += encoder_delta_deg;
+    }
+    propagation_delta_deg =
+        propagation_yaw_rate_deg_per_second * input->dt_seconds;
+    gyro_predicted_deg = next.pose.yaw_deg + propagation_delta_deg;
     if (!finite_value(forward_delta) ||
         !finite_value(encoder_delta_deg) ||
         !finite_value(gyro_delta_deg) ||
         !finite_value(encoder_yaw_rate_deg_per_second) ||
         !finite_value(slip_residual_deg_per_second) ||
+        !finite_value(propagation_yaw_rate_deg_per_second) ||
+        !finite_value(propagation_delta_deg) ||
         !finite_value(gyro_predicted_deg) ||
         !finite_value(next.encoder_heading_deg) ||
         !finite_value(next.heading_reference_deg) ||
@@ -357,7 +383,7 @@ bool Mode_Car_FusedNavigation_Update(
         },
         .target_yaw_rate_deg_per_second = target_yaw_rate_deg_per_second,
         .measured_yaw_rate_deg_per_second =
-            input->measured_yaw_rate_deg_per_second,
+            propagation_yaw_rate_deg_per_second,
     };
     if (!Mode_Car_SpinRate_Update(
             &next.yaw_rate_controller,
@@ -406,6 +432,8 @@ bool Mode_Car_FusedNavigation_Update(
         .effort_left_percent = speed_output.left_effort_percent,
         .effort_right_percent = speed_output.right_effort_percent,
         .slip_gate_active = next.slip_gate_active,
+        .yaw_rate_fallback_active =
+            !input->measured_yaw_rate_valid,
     };
     *mode = next;
     return true;

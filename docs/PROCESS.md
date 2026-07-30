@@ -801,3 +801,1016 @@
   字体仅覆盖当前页面需要的 ASCII 大写、数字和标点。
 - 待确认事项：观察约 200 ms 页面刷新、数值可读性、PeerLink/QD4310 断开变红以及
   发车/停车颜色切换，同时确认蓝牙和控制环不受影响。
+
+## 2026-07-30：H 题车端惯导、灰度辅助与线性速度规划
+
+- 修改原因：用户要求小车以里程计预测制动点，发车和停车均采用线性速度变化，并让惯导作为主链、灰度作为横向辅助。
+- 最终决策：新增 `Mode_Car_LinearSpeedProfile`，以左右轮累计距离平均值计算制动包络、目标剩余距离和前瞻预告；起步按 `+a_up` 线性加速，目标段按 `-a_down` 线性减速，只有稳定零速后才执行正常停止和 `DIS`。Bring-up Task 复用 `Mode_Car_FusedNavigation` 完成编码器增量与 ICM-45686 偏置校正陀螺的局部 `x/y/yaw` 惯导；Xinliu T8 仅更新横向 PID，短时串口空窗使用 INS 直线修正，超过辅助窗口则请求同一条规划停车轨迹。关闭速度环原有指数目标平滑，避免二次改变加速度。
+- 涉及文件：`Mode/Car/include/mode_car_control.h`、`Mode/Car/Control/mode_car_speed_profile.c`、`Mode/Car/CMakeLists.txt`、`Task/task_bringup_chassis.c`、`Task/task_bringup_chassis.h`、`config/core_config.h`、`config/verification/components.json`、速度规划测试脚本和 `tests/speed_profile`。
+- 验证方式和结果：速度规划 host 测试、导航 host 测试、Cortex-M0+ 严格编译通过；`tools/project.ps1 -Action Verify -Scope Auto` 通过，最后的稳定零速补丁又重新完成了 G3519 Bring-up Debug/Release 完整链接。
+- 已知限制：尚未烧录或实车验证；`guard_distance_mm`、CPR/有效轮周、加减速度、灰度辅助窗口和安装轴向仍需依据实车日志标定；本次未修改 SysConfig、引脚、通信协议或滚球端代码。
+- 待确认事项：先在空载直线、带滚球直线和评分点前瞻停车三组日志中标定参数，再接入后续运球赛段的 `SetGoal` 里程目标。
+## 2026-07-30 follow-up: 2026 H track route binding
+
+- Confirmed this is the 2026 H track. Added H geometry constants (AB/CD 1500 mm,
+  semicircles 1570.8 mm, lap 6141.6 mm), route-goal binding, straight/arc speed
+  caps, and a slewed cruise-cap API. Added startup grayscale grace and preserved
+  INS fallback through short invalid-frame windows. No SysConfig, BSP, protocol,
+  or ball-side code changed; `vofa+.csv` user edits remain untouched.
+
+## 2026-07-30 follow-up: geometry-aware INS lookahead
+
+- The short grayscale-gap fallback now generates its lookahead point from the
+  2026 H route geometry (A→B straight, B→C semicircle, C→D straight, D→A
+  semicircle). This keeps the INS fallback on the circular path rather than
+  forcing a straight chord through a corner. A configured route goal clamps the
+  lookahead at the scoring point so the braking envelope and path preview end at
+  the same distance.
+- Host navigation/speed-profile tests, strict Cortex-M0+ compilation, and the
+  G3519 Bring-up Debug/Release full links pass after this change. Hardware
+  calibration and physical verification remain pending.
+
+## 2026-07-30 follow-up: profile ownership and acceleration feedforward
+
+- Fixed the valid-grayscale control composition so the linear speed profile
+  remains the sole longitudinal reference. INS now contributes only the wheel
+  differential required by the 2026 H route, and T8 contributes only its line
+  differential; measured mean speed no longer replaces the planned reference.
+- `reference_acceleration_mm_per_second2` is now the actual reference-speed
+  delta divided by `dt`, including a partial final ramp step. This prevents a
+  future `ACC` packet from reporting zero on the sample that reaches a cap.
+- Speed-profile and fused-navigation host tests, strict Cortex-M0+ compilation,
+  template checks, and G3519 Bring-up Debug/Release full links pass. No
+  SysConfig, BSP, PeerLink packet, ball-side code, or Task timing was changed.
+  Hardware calibration, flashing, and physical 2026 H verification remain
+  pending.
+
+## 2026-07-30 follow-up: clockwise route and bounded preview speed
+
+- Corrected the 2026 H route orientation from the rejected counter-clockwise
+  interpretation to the specified clockwise A→B→C→D→A path. With vehicle-left
+  defined as `+Y`, both semicircles and the C→D straight now lie at negative
+  `Y`; repeated-lap route lookup wraps by lap distance.
+- Fixed the distance-goal envelope so it is always limited by the active
+  straight/curve cruise cap. A configured lap goal can no longer make the
+  profile accelerate above 420 mm/s on straights or 320 mm/s on semicircles,
+  and a stop request cannot raise the current reference speed.
+- Added a constant-deceleration preview on both straights. With the current
+  420/320 mm/s and 220 mm/s² defaults, deceleration starts about 168 mm before
+  B and D so curve speed is reached at the tangent point.
+- The earlier 380/300 mm/s candidate was rejected after the completed
+  start/curve/stop simulation took about 20.08 s. The 420/320 mm/s candidate
+  takes about 18.9 s in the same ideal odometry model; this is not hardware
+  evidence and retains the same 180/220 mm/s² acceleration limits.
+- The latest fresh T8 correction is now recomposed every 10 ms around the
+  current profile reference and INS differential. A held grayscale target can
+  no longer freeze the longitudinal ramp between 20 ms sensor frames.
+- Host tests, Navigation/SpeedProfile strict Cortex-M0+ compilation, template
+  architecture checks, and G3519 Bring-up Debug/Release full links pass.
+  Debug/Release Flash are `76624/73200 B`; SRAM_BANK0 is `19056/19048 B`.
+  No SysConfig, BSP, PeerLink packet, Task timing, flashing, or hardware test
+  was changed or performed.
+
+## 2026-07-30 follow-up: compact car-debug VOFA telemetry
+
+- Replaced the bring-up Bluetooth FireWater line with 12 numeric channels for
+  car tuning: route distance, measured/target wheel speeds, reference speed and
+  acceleration, remaining/braking distances, yaw, line error, and profile state.
+  The 20 ms period, buffered non-blocking UART path, and board-to-board
+  `HB/TEL/ENC/DIS` protocol are unchanged; F407/QD4310 values remain available
+  on the peer link and TFT rather than occupying this waveform.
+- Updated the Task header, Task README, and core telemetry buffer contract to
+  match the current format. Existing `vofa+.csv` user data was preserved.
+- Host/ARM checks and G3519 Bring-up Debug/Release full links pass. Flashing is
+  explicitly requested for this turn and is pending the final G3519 DAPLink
+  Doctor/build/read-back sequence; hardware waveform reception remains to be
+  checked after reset.
+
+## 2026-07-30 follow-up: VOFA compact telemetry flashed to G3519
+
+- The user explicitly requested flashing the current car-debug firmware. The
+  selected target was MSPM0G3519 Bring-up Debug, using the configured DAPLink
+  probe and the existing custom OpenOCD path; the ordinary non-bring-up
+  `g3519-debug` image was not used.
+- DAPLink Doctor passed, OpenOCD identified the MSPM0G3519 Cortex-M0+, and
+  76624 bytes were programmed. A full main-Flash read-back of the same length
+  produced SHA-256
+  `C651E5B0F3316A72D4C31A568135EF84A243C61BFCB3F1C879F72367E9E7974E`, matching
+  the source BIN; the target was then reset and run.
+- The result proves probe/target access, programming, and read-back integrity.
+  It does not yet prove COM/VOFA reception, 12-column ordering, encoder
+  polarity, or closed-loop 26H behavior; those remain hardware observations.
+
+## 2026-07-30 follow-up: post-flash 26H route audit
+
+- The clockwise route correction, bounded goal/cruise envelope, 420/320 mm/s
+  candidate, B/D preview braking, and 10 ms grayscale recomposition were made
+  after the compact-VOFA image above was flashed. The current source therefore
+  must not be described as deployed even though its Debug image is also 76624 B;
+  binary size equality is not image identity.
+- Current source retains the approved 12-column Bluetooth car-debug frame and
+  leaves `HB/TEL/ENC/DIS` unchanged. Host tests, full strict ARM compilation,
+  and current G3519 Bring-up Debug/Release links pass; no additional flashing
+  or 26H hardware run was performed.
+
+## 2026-07-30：维特摆杆角度调试串口
+
+- 修改原因：用户要求增加串口读取安装在摆杆运动部分、距右侧转轴 O 约 10～30 mm 的
+  维特陀螺仪；它只作为摆杆/QD4310 调试角度参考，不参与任何控制闭环。
+- 最终决策：Bring-up Task 复用现有 G3519 AUX UART0（PB0 TX/PB1 RX、115200 8N1），
+  启用已有 `Device_JY61P` 解析 `0x55`、11 字节和校验和协议。每 10 ms 最多读取
+  128 字节，只有 500 ms 内的新合法 `0x53` 帧才令角度有效；离线不阻止小车运行。
+  安装约定 Y 轴平行转轴 O、X 轴沿摆杆；按用户最终坐标约定，CH12 输出绝对摆杆
+  Pitch=`ICM45686车体Pitch + JY61P摆杆Pitch`；CH13 输出最近合法 `0x53` 角度帧年龄
+  ms，任一 Pitch 无效时为 `0,9999`；
+  原 CH0～CH11 不变，FireWater 总列数从 12 增为 14。
+- 涉及文件：根/Task CMake、`Task/task_bringup_chassis.*`、`Task/README.md`、
+  `Device/Sensor/IMU/JY61P` 源码/README、`tests/jy61p`、两个测试入口、
+  `config/core_config.h`、验证组件清单、`docs/DEVICE_PARAMETERS.md` 和 `COOPERATION.md`。
+  未修改 SysConfig、BSP、DMA/ISR、PeerLink协议、Task周期/优先级或F407源码。
+- 验证方式和结果：Auto增量验证10个组件通过，包括架构/差异检查、相关host测试、
+  Cortex-M0+严格编译及G3519 Bring-up Debug/Release完整链接；当前BIN分别为
+  `77888/74176 B`，SRAM_BANK0分别为`19152/19144 B`。
+- 实物只读检查：显式选择 MSPM0G3519 DAPLink 后，UART0 PB1 收到连续合法
+  `55 51`、`55 52`、`55 53` 帧，115200 配置和抽查校验和正确；示例角度帧
+  `55 53 9d 30 bb 0f 16 cf 9f 46 09` 的 JY61P Pitch 约为 22.12°。检查后恢复目标运行，
+  未在该诊断步骤写 Flash。
+- 烧录与回读：DAPLink Doctor 通过；显式选择 MSPM0G3519 Bring-up Debug 后写入
+  `77888 B`，完整回读 SHA-256
+  `CD4DEEEA64CF09A3D90F9B6405B08E19B2005491F833E8A84E6BE8B5AE4B43FA` 与源 BIN
+  一致，随后复位运行。
+- 运行快照：主故障为 0，JY61P ready/online/has_euler 均为真；有效帧 19618、`0x53`
+  帧 6538、校验错误 1。ICM45686 与 JY61P 的样本时间戳同为 33166 ms；当时 ICM Pitch
+  `4.81097°`、JY Pitch `16.20483°`，求和 `21.01580°`，证明当前固件在运行期消费并按
+  公式组合两个快照。同步边界是同一 10 ms Task 心跳时间戳，并非硬件同时采样；该
+  调试器读取也不等同于蓝牙 FireWater 完整行抓取。
+- 已知限制：JY61P Pitch 方向、杆面水平安装零偏和相对 QD4310 原始角的映射尚未标定；
+  当前源码不执行 Pitch Tare。代码编译、串口帧和求和正确都不能证明机械角度已经准确。
+- 待确认事项：从实际蓝牙无线串口确认固定 14 列、CH13 通常小于 20～30 ms；手动抬杆
+  确认组合 Pitch 单调和符号后，再与 QD4310 原始角做五点标定。
+
+## 2026-07-30：TFT 加入本次巡检时间
+
+- 修改原因：用户要求在现有 G3519 Bring-up TFT 状态页显示巡检时间，便于现场直接观察
+  单次发车至停车的运行耗时。
+- 最终决策：复用现有 `CAR` 行，不增加显示行或 Task。成功发车时将计时清零；小车处于
+  巡检运行状态时，以现有毫秒 Tick 的无符号时间差累计；规划停车或故障停车后保留最后
+  一次累计值。显示格式为 `CAR:RUN mm:ss.d` 或 `CAR:STOP mm:ss.d`，精度 0.1 s；受
+  16 字符行宽限制，显示值在 `99:59.9` 钳制，内部毫秒计数不钳制。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/README.md` 和本记录。未修改 TFT Device、
+  BSP/SysConfig、Task 周期/优先级、VOFA 14 列、PeerLink/F407 协议或控制逻辑；新增静态
+  RAM 为一个 `uint32_t` 计时值。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto` 通过模板架构检查、差异
+  检查和 G3519 Bring-up Debug/Release 完整链接；修正定长字符构造后 Debug 无字符串截断
+  告警。最终 Debug/Release Flash 为 `78104/74368 B`，SRAM_BANK0 为
+  `19160/19152 B`。
+- 烧录与回读：用户明确授权后，DAPLink Doctor 通过；显式选择序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908` 的 G3519 DAPLink，写入当前
+  Bring-up Debug `78104 B`。从主 Flash `0x00000000` 按相同长度完整回读，源 BIN 与
+  回读 SHA-256 均为
+  `2936A735853ED726F9A86519F33ED38865A6C37245D92E2FAD181BBEDC2D8698`，随后复位运行。
+- 已知限制：计时表示 Task 记录的发车后运行时间，不是独立硬件计时器或比赛官方计时；
+  超过 `99:59.9` 后 TFT 保持显示上限。烧录与回读一致只能证明目标写入完整，尚未实际
+  操作 KEY 并观察 TFT 的动态刷新。
+- 待确认事项：现场观察发车清零、运行递增、正常/故障停车保持以及再次发车重新清零
+  是否符合使用习惯。
+
+## 2026-07-30：TFT 按变化字符局部刷新
+
+- 修改原因：用户要求说明当前 TFT 页面，并降低无变化内容和动态数字刷新造成的 CPU/SPI
+  开销。
+- 最终决策：保留现有 10 行内容、每 20 ms 检查一行和约 200 ms 全页扫描周期。整行文字
+  与颜色不变时继续零 SPI 写入；普通文字变化时只生成并发送首尾变化位置覆盖的连续
+  `8×16` 字符格，单字符变化由整行 `4096 B` 像素数据降为 `256 B`；首次显示或颜色变化
+  仍完整重绘 `128×16` 行，以清除红屏自检背景并统一字色。QD4310 遥测只在第 3～7 行、
+  绝对编码器只在第 8 行扫描时读取，其他行不再获取无关快照。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/README.md` 和本记录。未修改 ST7735S
+  Device、BSP/SysConfig、SPI 时钟、Task 周期/优先级、控制、VOFA 或板间协议；未增加
+  Task、堆内存或静态 RAM。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto` 通过模板架构检查、差异
+  检查和 G3519 Bring-up Debug/Release 完整链接，无新增编译告警。Debug/Release Flash 为
+  `78384/74592 B`，SRAM_BANK0 保持 `19160/19152 B`。
+- 已知限制：当前只完成源码和完整链接验证，尚未测量局部 SPI 写入 WCET、Task 抖动或
+  栈高水位，也未观察字符缩短、颜色切换时是否残留旧像素。板上仍运行此前已回读验证的
+  `78104 B` 巡检计时版本，不包含本次局部刷新优化。
+- 待确认事项：明确授权烧录本版后，观察十行首次清屏、动态数字、在线/离线和 RUN/STOP
+  颜色切换，并测量优化前后的 SPI 写入时间与 Bring-up Task 余量。
+
+## 2026-07-30：TFT 精简为三行状态页
+
+- 修改原因：用户明确只保留灰度状态、车辆巡检时间，并将当前 TFT 的 PeerLink/QD4310
+  通信状态合并成一行；ID/使能、电流、转速、角度、绝对编码器、心跳和故障明细均不再
+  需要。上条“保留 10 行”的显示内容决策已被本次要求覆盖。
+- 最终决策：页面固定为三行。第 1 行只显示 `LINE:OK/LOST/STALE`，不显示灰度误差；
+  第 2 行保留 `CAR:RUN/STOP mm:ss.d`；第 3 行显示 `COM:Lx Qx`，`L` 表示 PeerLink
+  当前在线、`Q` 表示 200 ms 内新鲜 `TEL` 中的 QD4310 在线位，二者均在线为绿色，任一
+  离线为红色。每 50 ms 检查一行，约 150 ms 扫描全页；继续使用变化字符局部刷新，未变
+  内容不写 SPI。红屏自检后一次清黑下方未使用区域，运行期不再访问该区域。
+- 涉及文件：`Task/task_bringup_chassis.c/.h`、`Task/README.md`、`config/core_config.h` 和
+  本记录。未修改 ST7735S Device、BSP/SysConfig、SPI 时钟、控制、VOFA 14 列、PeerLink
+  协议或 F407 源码；未增加 Task、状态机、堆内存或静态缓冲。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto` 通过通信 host 测试、
+  ARM 严格编译、模板架构/差异检查及相关 Debug/Release 完整链接。G3519 Bring-up
+  Debug/Release BIN 为 `77392/73784 B`，SRAM_BANK0 为 `19032/19024 B`；相比十行局部
+  刷新版，静态 SRAM 各减少 128 B。
+- 烧录与回读：用户明确授权后，DAPLink Doctor 通过；显式选择序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908` 的 G3519 DAPLink，写入当前
+  Bring-up Debug `77392 B`。从主 Flash `0x00000000` 按相同长度完整回读，源 BIN 与
+  回读 SHA-256 均为
+  `6379E595878D2A9565A14661226240FFFB9F65ED0CF6F355247E65E3C95C9812`，随后复位运行。
+- 已知限制：烧录和回读一致证明目标已部署当前镜像，但约 150 ms 页面周期、启动下半屏
+  清黑、局部刷新无残影以及通信颜色切换仍未进行肉眼观察；Bring-up Task WCET、抖动和
+  栈高水位也尚未实测。
+- 待确认事项：现场观察 `LINE` 三态、巡检计时、`COM:Lx Qx` 断联切换和下方区域清黑，
+  并测量 Bring-up Task WCET/栈高水位。
+
+## 2026-07-30：运行期冻结 TFT 与发车硬件门
+
+- 修改原因：用户要求发车后不再刷新 TFT，停车后才显示最终巡检时间；任何可检测的
+  控制硬件掉线时禁止发车。
+- 最终决策：停车待机时继续每 50 ms 检查一行；成功发车后不再调用状态页更新函数，
+  因而不做显示快照读取、文字格式化或 TFT SPI 写入。线性制动期间仍属于运行态并保持
+  冻结；`g_tracking_active` 由真变假时立即只更新车辆行的 `CAR:STOP mm:ss.d` 最终时间，
+  随后恢复待机扫描。运行期间保留发车前画面，不绘制递增的 `CAR:RUN` 时间。
+- 发车门槛：每个新 T8 帧无论停车或运行均只解析一次；按键发车同时要求灰度样本在
+  100 ms 新鲜窗口内且检测到线、ICM45686 当前 `feedback_valid`、PeerLink 当前在线、
+  200 ms 内存在新鲜 `TEL` 且 QD4310 在线，以及 `g_BRINGUP_Fault==0`。任一条件不满足
+  时按键不启动电机。JY61P 继续只作摆杆标定和指示，不参与门槛或任何控制。
+- 显示决策：第三行由 `COM:Lx Qx` 更新为 `COM:Ix Lx Qx`；`I/L/Q` 分别表示 ICM45686
+  有效、PeerLink 在线和 QD4310 新鲜在线，三项全真为绿色，否则为红色。`LINE` 行独立
+  表示灰度发车条件。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/README.md` 和本记录。未修改 BSP、
+  SysConfig、引脚、Task 周期/优先级、速度规划参数、JY61P 控制边界、VOFA 14 列或
+  `HB/TEL/ENC/DIS` 协议；未增加 Task、堆内存、重试或自动恢复状态。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto` 通过模板架构、差异检查
+  以及 G3519 Bring-up Debug/Release ARM 完整编译和链接，无新增编译告警。Debug/Release
+  Flash 为 `77728/74104 B`，SRAM_BANK0 为 `19032/19024 B`。
+- 烧录与回读：用户明确授权后，G3519+DAPLink Doctor 通过；显式选择序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，写入 Bring-up Debug
+  `77728 B`。从主 Flash `0x00000000` 按相同长度完整回读，源 BIN 与目标回读 SHA-256
+  均为 `3E31077AE45EB25F78BD33B5B5BD524795A6EAC1CA2E8D0EE58BE8AA10EA7A90`，随后
+  `reset run`。
+- 已知限制：烧录和全长回读证明当前镜像完整部署，不证明实际按键拒绝、TFT 运行期
+  零 SPI、最终时间刷新、26H 闭环行为或 Task WCET/栈高水位。发车门只约束启动瞬间；
+  本次需求未授权把 PeerLink/QD4310/ICM 运行中掉线改成新的自动停车策略。
+- 待确认事项：现场分别断开 T8、ICM45686、PeerLink/F407 或令 `TEL/QD4310` 过期，
+  确认按键不发车；三项通信正常且 `LINE:OK` 时确认可发车、运行中屏幕完全静止，并在
+  规划停车后确认最终时间一次更新。
+
+## 2026-07-30：G3519 灰度切换为亚博 UART 模拟量主动上报
+
+- 修改原因：用户将现有灰度硬件更换为亚博八路巡线红外传感器；旧固件仍周期发送芯流
+  T8 二进制查询，因协议不兼容收不到灰度帧，导致 `LINE` 发车条件始终不能成立。
+- 最终决策：保留 `Device_XinliuT8` 和 `Device_Ganwei` 通用驱动，新增独立
+  `Device_YahboomTrack`。解析层只复用厂家资料中的 115200 8N1、`$0,1,0#` 启动命令和
+  `$A,x1:...,...,x8:...#` 原始模拟帧，不采用厂家/旧参考工程的白底、阈值或加权算法。
+  解析器要求 x1～x8 顺序完整、纯十进制 `uint16_t` 和 `#` 帧尾，支持 UART 任意分块、
+  新 `$` 重同步、超长/溢出/格式错误统计，且无堆、无 `strtok/atoi/sscanf`。Task 在串口和
+  Device 初始化后只提交一次启动命令，之后每 10 ms 只排空主动上报字节；每个新快照仍
+  原样调用既有 `Device_LineTracking_UpdateAnalogRaw()`，保留右偏为正、共同最小值消除、
+  Mode、速度规划、发车门、TFT、JY61P 和 `HB/TEL/ENC/DIS` 行为。
+- 涉及文件：新增 `Device/Sensor/LineTracking/YahboomTrack/`；修改根/Device/Task CMake、
+  `CMakePresets.json`、`Task/task_bringup_chassis.c/.h`、LineTracking host/ARM 测试入口、
+  验证组件描述、相关 README、`docs/DEVICE_PARAMETERS.md`、`COOPERATION.md` 和本记录。
+  未修改 BSP、SysConfig、UART3 PC6/PC7、115200 8N1、Task 周期/优先级、灰度算法参数、
+  速度参数、VOFA 14 列或板间协议；未增加 Task、堆内存、重试或自动恢复状态。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto` 执行 10 个受影响组件并
+  通过模板架构/差异检查、相关 host 测试、Cortex-M0+ 严格编译和完整链接。新增测试覆盖
+  启动命令、跨块帧、帧外噪声、重同步、乱序/缺通道、`uint16_t` 溢出和 128 B 超长帧；
+  G3519 Bring-up Debug/Release Flash 为 `77800/74168 B`，SRAM_BANK0 为
+  `19136/19128 B`。
+- 烧录与回读：用户明确授权后，G3519+DAPLink Doctor 通过；显式选择序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，写入 Bring-up Debug
+  `77800 B`。从主 Flash `0x00000000` 按相同长度完整回读，源 BIN 与目标回读 SHA-256
+  均为 `3B33B3F58B06430EEC522D292D37005316200ADA7178C02A6C8891B85B69FA46`，随后
+  `reset run`。
+- 实物只读检查：复位运行约 3 s 后，解析器累计接受 291 帧、拒绝 1 个格式错误帧，
+  无数值溢出或超长帧；最新 x1～x8 为 `835,1066,812,866,594,642,870,554`。
+  原灰度算法输出 `line_present=true`、`line_lost=false`、位置 `-0.2615`、置信度
+  `0.9566`，主故障和 TFT 故障均为 0；检查后再次 `reset run`。
+- 已知限制：厂家资料未给主动上报频率；冷上电资料要求等待传感器稳定，但当前按用户边界
+  只提交一次启动命令且不重试，若模块单独掉电重启，需要复位 G3519 才会再次启动上报。
+  当前抽样已证明 UART 收到连续合法帧并进入原灰度算法，但单个静态位置不能确认安装方向、
+  白底/黑线完整 ADC 分布或全赛道 `LINE` 状态切换。
+- 待确认事项：在赛道白底与黑线上移动模块，确认 x1 为车左、x8 为车右以及原灰度算法
+  能正确切换 `LINE:OK/LOST/STALE`；实车发车前仍需确认 ICM、PeerLink 和 QD4310 发车门
+  同时在线。
+
+## 2026-07-30：终点横杠两帧确认与停车余量
+
+- 修改原因：用户确认小黑横杠作为一圈终点参考，要求识别后再走 `210 mm`，并要求横杠
+  必须经过两帧确认；同时根据首轮停车趋势下调有效减速度和弯道速度。
+- 最终决策：只在路线平均里程达到 `5000 mm` 后检查亚博原始模拟量；单个新帧至少
+  `6/8` 路 ADC 不低于 `900` 才算候选，连续两个不同 `snapshot.sequence` 的新帧均为
+  候选才锁存，任一新帧不满足即将计数清零。同一帧不会被 10 ms Task 重复累计。锁存
+  仅发生一次，纵向目标改为第二帧确认时左右轮平均里程 `+210 mm`；默认一圈
+  `6141.6 mm` 目标仍负责横杠漏检回退和锁存前的制动包络。普通横向循迹继续使用原共同
+  最小值消除算法，不采用厂家阈值循迹算法。
+- 参数变化：纵向减速度由 `220` 下调为 `185 mm/s²`；直道保持 `420 mm/s`，半圆由
+  `320` 下调为 `300 mm/s`。横杠锁存后仍由同一线性速度规划器前瞻减速，不直接清零
+  电机；VOFA 固定 14 列不变，CH7 会反映更新后的剩余距离。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、`Task/README.md`、
+  `COOPERATION.md` 和本记录。未修改 BSP、SysConfig、UART 协议、Task 周期/优先级、
+  JY61P 控制边界、PeerLink 协议或 F407 源码。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto` 通过 Navigation、
+  SpeedProfile 和 LineTracking host 测试、模板检查、Cortex-M0+ 严格编译，以及 Feature
+  Smoke 与 G3519 Bring-up Debug/Release 完整链接。Debug/Release Flash 分别为
+  `78072/74392 B`，SRAM_BANK0 分别为 `19144/19136 B`。
+- 烧录与回读：用户明确授权后，G3519+DAPLink Doctor 通过；显式选择序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，写入 Bring-up Debug
+  `78072 B`。从主 Flash `0x00000000` 按相同长度完整回读，源 BIN 与回读 SHA-256 均为
+  `9C32A3F9B55F1786D230DDFE24164E1175A4BFD9EB1B1F0A8222B79B25B0BC05`，随后执行
+  `reset run`；F407 未修改。
+- 已知限制：横杠检测位于产品 Task 私有逻辑，没有独立 host 单测；`900`、`6/8`、
+  `5000 mm` 和 `210 mm` 是当前初值，尚未用终点横杠处的 x1～x8 与最终停车偏差实测
+  校准。烧录和全长回读只能证明镜像完整部署，不能视为横杠两帧确认和停车精度已经完成
+  26H 实物验证。
+- 待确认事项：实车记录横杠前后 x1～x8、两帧确认计数、锁存平均里程、更新后的目标
+  里程和最终停车偏差，再决定是否调整 ADC 阈值、通道数、`210 mm` 或减速度。
+
+## 2026-07-30：按 26H 题图收紧 A 点横杠检测窗口
+
+- 修改原因：上一版把横杠检测从 `5000 mm` 开放，实车在 D→A 半圆上把弧线误认为横杠。
+  题图明确启停线只位于 A 点，长度 `5 cm`、宽度 `1.8±0.2 cm` 且与环路垂直；D→A
+  半圆的名义里程范围为 `4570.8～6141.6 mm`，因此旧门控会在弧线内提前开放。
+- 实测证据：最新 `vofa+.csv` 为固定 14 列、2034 帧；单次运行在 CH0=`5000 mm` 时
+  CH7 仍为名义剩余 `1141 mm`，下一帧 CH0=`5005 mm` 时 CH7 跳为 `207 mm`、速度阶段
+  进入制动且 yaw=`113.12°`，最终约停在 `5265 mm`。这证明旧逻辑在门控刚开放后的
+  第二个新帧立即误锁存，不是制动 PID 或两帧去重失效。旧 `5000 mm` 开放策略已否决。
+- 最终决策：按一圈 `6141.6 mm` 和横杠后运行 `210 mm` 推导预计过线里程
+  `5931.6 mm`，只在其 `±120 mm` 编码器窗口内处理横杠。进入窗口后必须先收到至少
+  一个非横杠新帧才武装；随后仍要求连续两个不同序号的新帧均满足至少 `6/8` 路
+  ADC≥`900` 才锁存。窗口外清除武装和确认计数；漏检仍由原 `6141.6 mm` 目标停车。
+  横向共同最小值灰度算法、速度/减速度、Task 周期和 VOFA 14 列均未改变。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、`Task/README.md`、
+  `COOPERATION.md` 和本记录。新增一个 Task 私有静态布尔状态；未增加 Task、堆内存、
+  阻塞、重试或通信字段，未修改 BSP、SysConfig、PeerLink、JY61P 或 F407。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto` 通过模板架构/差异检查、
+  Cortex-M0+ 严格编译及 G3519 Bring-up Debug/Release 完整链接。Debug/Release Flash
+  分别为 `78136/74440 B`，SRAM_BANK0 分别为 `19144/19136 B`；静态 SRAM 相比上一版
+  未增加。
+- 烧录与回读：用户明确授权后，G3519+DAPLink Doctor 通过；显式选择序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，写入 Bring-up Debug
+  `78136 B`。从主 Flash `0x00000000` 按相同长度完整回读，源 BIN 与回读 SHA-256 均为
+  `A886DDC54231E82E9867563C4F944383A3DA0047BBCE89523FCFC46CFFE3C8FC`，随后执行
+  `reset run`；F407 未修改。
+- 已知限制：横杠窗口逻辑位于产品 Task，没有独立 host 单测；`±120 mm`、ADC `900`、
+  `6/8` 和 `210 mm` 尚未在真实 A 点横杠上完成闭环标定。烧录和全长回读不能证明弧线
+  误识别已在实车消失，也不能证明最终停车偏差满足 `2 cm`。
+- 待确认事项：下一圈确认 CH0=`5000～5811 mm` 期间 CH7 不再跳到约 `210 mm`；在 A 点
+  前记录横杠锁存时 CH0/CH7、x1～x8 和最终停车偏差，再只调整窗口、阈值或余量中的
+  必要参数。
+
+## 2026-07-30：惯导航向有效门与编码器回退修正
+
+- 修改原因：ICM45686 的 `feedback_valid` 可能早于陀螺零偏标定完成，旧发车门会过早把
+  未完成零偏标定的 yaw-rate 当作可用惯导；运行中陀螺失效时，Task 又把无效 yaw-rate
+  作为 `0 deg/s` 交给融合 Mode，使弯道短时航向被冻结。
+- 最终决策：发车、TFT I 状态和融合惯导统一要求 ICM 当前反馈有效、陀螺零偏有效且
+  标定状态为 `DEVICE_IMU_CALIBRATION_COMPLETE`。融合输入新增显式 yaw-rate 有效位；
+  有效时保留扣除零偏后的陀螺传播和打滑门，无效时以
+  `(right-left)/track_width` 编码器角速度连续传播航向并供 yaw-rate 控制器使用，同时
+  清除旧打滑门。输出新增 `yaw_rate_fallback_active` 诊断位。F407 `CAR` 车体状态和
+  `ICM45686 Pitch + JY61P Pitch` 绝对摆杆角仍使用原 ICM 当前反馈有效位，JY61P 不进入
+  控制或发车门。
+- 涉及文件：`Mode/Car/include/mode_car_fused_navigation.h`、
+  `Mode/Car/Navigation/mode_car_fused_navigation.c`、对应 README 和 host 测试，以及
+  `Task/task_bringup_chassis.c`、`Task/README.md` 与本记录。未修改 ICM 安装轴、轮距、
+  BSP/SysConfig、引脚、Task 周期/优先级、速度规划参数或 JY61P 控制边界。
+- 验证方式和结果：新增 host 测试覆盖陀螺失效后用差速里程传播航向；
+  `tools/project.ps1 -Action Verify -Scope Auto` 通过模板架构/差异检查、Communication、
+  Navigation、SpeedProfile、LineTracking host 测试、Cortex-M0+ ARM 严格编译及受影响
+  Debug/Release 完整链接。随后经 TI SysConfig 重新生成并完成 G3519 Bring-up
+  Debug/Release 干净链接；FLASH 分别为 `79024/75080 B`，SRAM_BANK0 分别为
+  `19144/19136 B`。
+- 烧录与回读：G3519+DAPLink Doctor 通过；显式选择序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，写入 Bring-up Debug
+  `79024 B`。从主 Flash `0x00000000` 按相同长度完整回读，源 BIN 与回读 SHA-256 均为
+  `35927063DA620D2FB1CFF25C9398126DB5F95F0078D80C76DE122DB2CEC509D4`，随后执行
+  `reset run`；F407 未修改。
+- 已知限制：烧录与回读一致只证明镜像完整部署；ICM 安装轴、有效轮距、实车航向正负、
+  弯道航向闭环、打滑门和编码器回退切换尚未完成 26H 实物标定。编码器回退只能在陀螺
+  无效时维持短时连续性，不能替代绝对航向重定位，也不能消除左右轮共同打滑误差。
+- 待确认事项：静止上电等待零偏标定完成后确认 TFT `I1` 才允许发车；实车记录直线与
+  左右半圆的编码器 yaw-rate、ICM yaw-rate、融合 yaw 和回退位，确认安装轴极性、
+  `120 mm` 有效轮距及切换过程后再做机械参数标定。
+
+## 2026-07-30：按 F407 接收契约加入 ACC/ACC_MEAS 发送
+
+- 修改原因：Agent B 当前 F407 已按六字段 `ACC` 和六字段 `ACC_MEAS` 接收，G3519
+  源码仍以 100 Hz 发送旧七字段 `CAR`，双方文档与实码不一致。
+- 最终决策：PeerLink 新增 `ACC` 100 Hz 和 `ACC_MEAS` 50 Hz 非阻塞发送 API、严格范围/
+  flags 语义校验、独立16位序号及成功/丢弃/错误计数。BUSY 整帧丢弃且不推进对应序号，
+  不增加 ACK、重发、Task 或状态机；旧 `CAR` Device API 暂留兼容，但 Bring-up Task
+  不再周期调用，活动发送收口为 `HB/ACC/ACC_MEAS/DIS`。
+- 安全有效位：杆轴相对车头方向、MG513X输出轴CPR/有效轮周、ICM安装轴和去重力线
+  加速度均未完成实物标定。当前 `TEMPLATE_PEER_LINK_ROD_AXIS_DIRECTION=0`、轮速尺度
+  标定门为0，因此 `ACC` 规范发送 `0,0,65535,0`，`ACC_MEAS` 规范发送
+  `processing_age=0,a=0,wheel=0,flags=0`。F407 前馈增益必须保持0；当前规划Mode没有
+  原子化下一切换时刻，后续轴向标定后也只能先用 `a_next=a_now,next_after_ms=65535`。
+- 涉及文件：`Device/Communication/PeerLink/`、`Task/task_bringup_chassis.c`、
+  `config/core_config.h`、PeerLink主机测试及对应 README、设备参数和协作文档。未修改
+  BSP、SysConfig、引脚、Task周期/优先级、速度规划器控制行为或 F407 源码。
+- 验证方式和结果：Communication host测试及 ARM严格编译通过；
+  `tools/project.ps1 -Action Verify -Scope Auto` 通过模板架构/差异检查和受影响完整链接；
+  TI SysConfig 重新生成后，G3519 Bring-up Debug/Release 干净完整链接通过，FLASH分别
+  为 `79216/75232 B`，SRAM_BANK0分别为 `19176/19160 B`。主机测试覆盖线上格式、边界、
+  无效值/flags语义和 BUSY 不推进序号。
+- 烧录与回读：用户明确授权后，显式选择 DAPLink 序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，写入 G3519 Bring-up Debug
+  `79216 B`。从 `0x00000000` 按相同长度完整回读，源 BIN 与回读 SHA-256 均为
+  `48B3F2DEDA506255FF07147CA516846E8DFF40DA22C583D83A0967424088452B`，随后执行
+  `reset run`。
+- 已知限制：烧录回读只证明新镜像完整部署；尚未在两板 UART 上抓取 100/50 Hz 实际
+  帧率、序号和 F407 接收计数，也未完成任何轴向/尺度标定。因此本版不能启用底盘前馈，
+  也不能宣称已经提供真实未来切换预告。
+- 待确认事项：先抓取双端 `ACC/ACC_MEAS` 计数和断流失效，再依次标定杆轴正负、输出轴
+  CPR/有效轮周、ICM安装轴及去重力补偿；每完成一项才开放对应有效位。
+
+## 2026-07-30：VOFA 增加亚博八路原始灰度
+
+- 修改原因：最新 `vofa+.csv` 共1998行，全部为固定14列；只有 CH10 归一化线误差，
+  无法直接观察终点横杠处 x1～x8 原始 ADC，用户要求立即加入八路原始数据。
+- 最终决策：保持原 CH0～CH13 语义不变，在蓝牙 FireWater 末尾固定追加 CH14～CH21，
+  依次为亚博 `x1..x8` 原始 `uint16_t` ADC。Task只读取自身持有的 Yahboom Device
+  Latest Value；未收到合法帧或样本超过现有100 ms新鲜度时，八路统一输出0。20 ms周期、
+  115200 8N1、非阻塞 BUSY 丢帧、控制算法、TFT、PeerLink和发车门均不改变。
+- 资源与带宽：继续使用原192字节Task栈内行缓冲，不新增Task、状态机、堆内存或BSP资源；
+  正常22列行仍在缓冲和115200单向预算内。实际WCET、栈高水位和无线丢帧率尚未实测。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/README.md`、`config/core_config.h`、
+  `COOPERATION.md`和本记录；保留用户现有 `vofa+.csv`，不修改历史采集数据。
+- 验证方式和结果：最新 CSV 静态检查确认1998/1998行均为14列；修改后模板架构和
+  `git diff HEAD --check` 通过，G3519 Bring-up Debug/Release完整链接通过，Flash分别为
+  `79176/75232 B`，SRAM_BANK0分别为 `19144/19160 B`。格式字符串在目标严格警告配置下
+  编译通过；尚未从蓝牙实抓22列行。
+- 烧录与回读：用户先要求暂不烧录，随后明确解除限制。显式选择 DAPLink 序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，写入 G3519 Bring-up Debug
+  `79176 B`；从 `0x00000000` 全长回读，源 BIN 与回读 SHA-256 均为
+  `A1DB55D37FEA2D471500408123994AC81A9FF21A800D4A5B230DAB0BAA5C5F6B`，随后执行
+  `reset run`。
+- 待确认事项：从实际蓝牙串口保存一份新CSV，确认每行固定22列、CH14～CH21与亚博
+  调试原帧一致，并记录终点横杠前后八路波形后再调整900阈值、6/8条件或检测窗口。
+
+## 2026-07-30：G3519 接入 F407 `ACC/ACC_MEAS` 发送契约
+
+- 修改原因：用户要求按滚球侧 Agent 的现有接收接口加入板间通信并烧录车端固件；此前
+  文档曾写成新接口，但 Bring-up Task 实际仍周期发送旧 `CAR`。
+- 最终决策：保留旧 `CAR` Device API 兼容面，但 Bring-up Task 停止调用。新增独立
+  `ACC` 六字段 100 Hz 发送和 `ACC_MEAS` 六字段 50 Hz 发送，二者各用独立16位序号；
+  UART BUSY 时整帧丢弃、不推进序号、无 ACK/重发。`ACC` 范围为 `±40000 mm/s²`；
+  `ACC_MEAS` 用 flags 声明 IMU/轮速有效及轴向、去重力、尺度标定状态。
+- 安全有效位：杆轴相对车头方向、MG513X输出轴CPR/有效轮周、ICM安装轴和去重力补偿
+  尚未实物标定。当前方向配置为0、轮速尺度标定门为0，所以车端规范发送
+  `ACC=0,0,65535,valid0` 和 `ACC_MEAS=age0,a0,wheel0,flags0`；F407前馈增益必须保持0。
+  现有规划器未原子输出下一切换时刻，未来方向标定后的首版只能使用
+  `a_next=a_now,next_after_ms=65535`，不得称为真实前瞻。
+- 涉及文件：`Device/Communication/PeerLink/device_peer_link.[ch]`及README、
+  `Task/task_bringup_chassis.c`及README、`config/core_config.h`、PeerLink主机测试、
+  `docs/DEVICE_PARAMETERS.md`、`COOPERATION.md`和本记录。未修改BSP、SysConfig、引脚、
+  Task周期/优先级、速度规划参数、JY61P控制边界或F407源码。
+- 验证方式和结果：Communication host测试和Cortex-M0+严格编译通过；
+  `tools/project.ps1 -Action Verify -Scope Auto` 通过架构/差异检查及受影响完整链接。
+  随后经TI SysConfig重新生成并完成G3519 Bring-up Debug/Release干净链接，FLASH分别为
+  `79216/75232 B`，SRAM_BANK0分别为`19176/19160 B`。Debug BIN SHA-256为
+  `48B3F2DEDA506255FF07147CA516846E8DFF40DA22C583D83A0967424088452B`。
+- 烧录状态：用户明确要求烧录，但指定序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908` 的 DAPLink 未被 Windows 枚举；
+  Doctor 和 OpenOCD 均确认找不到 CMSIS-DAP，因此未执行擦除、写入、回读或复位，板上
+  仍是此前镜像。重新连接探针后须写入上述 Bring-up Debug HEX，并按 `79216 B` 完整回读
+  比较 SHA-256 后才能报告部署完成。
+- 已知限制与待确认：当前只验证无效占位帧的软件格式，尚未做双端100/50 Hz抓帧、丢帧
+  计数、F407 500 Hz持值/失效或任何带球前馈实测。先完成物理尺度和轴向标定，再分别
+  开放有效位并从 `b=0` 开始联调。
+
+## 2026-07-30：终点横杠前线性降速至 250 mm/s
+
+- 修改原因：最新22列VOFA采集在约5833 mm完成横杠两帧确认，当时参考速度约296 mm/s、
+  剩余目标约204 mm；按185 mm/s²减速度和35 mm guard需要约275 mm停车包络，实车最终
+  停在约6098 mm，检测后多走约265 mm，较210 mm目标超出约55～60 mm。
+- 最终决策：保持185 mm/s²柔和线性减速度，最后D→A半圆在约5737.3 mm起把巡航上限
+  从300降为250 mm/s，并在预计横杠检测窗口下沿5811.6 mm前完成。推导距离为
+  `(300²-250²)/(2×185)=74.3 mm`；250 mm/s时停车包络约
+  `250²/(2×185)+35=203.9 mm`。继续复用既有线性速度规划器，不新增状态机。
+- 行为边界：黑块 `6/8≥900`、连续两帧、`5931.6±120 mm`窗口、锁存里程后
+  `+210 mm`目标和一圈兜底均不变；灰度循迹、INS、VOFA字段、PeerLink、SysConfig、BSP
+  和F407均未修改。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、`Task/README.md`、
+  `COOPERATION.md`和本记录。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构、差异检查、
+  相关host测试、Cortex-M0+严格编译及受影响完整链接；G3519 Bring-up Debug/Release
+  随后经SysConfig生成并干净完整链接，FLASH分别为78880/74864 B，SRAM_BANK0分别为
+  19120/19104 B，零编译错误。
+- 烧录与回读：DAPLink Doctor通过；显式选择序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，写入Bring-up Debug 78880 B。
+  从主Flash `0x00000000`按相同长度完整回读，源BIN与回读SHA-256均为
+  `19EE30C14AABE7909CC31F71859EF43188C99FF8F0A271FD6F45CB2F0A406579`，随后执行
+  `reset run`。
+- 已知限制：烧录回读只证明新镜像完整部署，不能证明实车能在横杠后精确210 mm停车；
+  实际轮速滞后、地面摩擦、带球负载和编码器误差仍可能改变停车位置。
+- 待确认事项：下一圈用VOFA确认约5737 mm后CH5以约-185 mm/s²降到250 mm/s，横杠
+  两帧确认时CH5接近250、CH7跳到约210 mm，并测量最终停车里程；再决定是否微调
+  250 mm/s接近速度、35 mm guard或210 mm标定值。
+
+## 2026-07-30：修正车体尺寸并加入26H五种车端模式
+
+- 修改原因：用户要求按26H第2～6项在TFT选择比赛模式，停车长按切换、短按确认；并纠正
+  车体尺寸为两轮间距200 mm、轮胎直径65 mm、全车长度320 mm。此前源码轮距120 mm错误；
+  用户中途给出的180 mm已被随后200 mm最终值覆盖，不再有效。
+- 最终决策：差分惯导有效轮距改为200 mm；轮胎继续使用名义轮周204.20 mm；320 mm作为
+  “通过B/A后再运行一车长停车”的产品几何量，不替代横杠检测后到车体停车基准的210 mm
+  偏置。相同轮速差下，编码器航向变化由错误的`(vR-vL)/120`修正为`(vR-vL)/200`。
+- 模式行为：M2顺时针一圈并停A；M3底盘锁定用于静车滚球；M4在1500 mm通过B并锁定成绩，
+  再运行320 mm规划停车；M5/M6在车体基准通过A时锁定成绩，再运行320 mm规划停车。
+  M2横杠目标为检测里程+210 mm，M5/M6为检测里程+530 mm；漏检目标分别为一圈和
+  一圈+320 mm。M5/M6通过A后的速度上限保持250 mm/s，不在里程取模后重新加速到420。
+- 按键/TFT：`Device_KeyInput`新增同一Task上下文的Update/ReadEvent分类事件接口；停车长按
+  循环M2～M6，短按确认并在移动模式发车，运行中短按保留线性停车、长按不切模式、双击
+  不执行动作。TFT从3行增至4行，新增模式行；黄色待确认、绿色已确认。继续遵守用户既定
+  约束：发车后完全冻结TFT，M4/M5/M6的提前锁存成绩在最终停车后显示。
+- 通信边界：Agent B只读核对F407当前只解析HB/CAR，没有MODE/TARGET/START或run_id接口；
+  本轮未修改PeerLink线上协议。M3滚球动作与M6指定目标仍未实现双板单键联动，不得因车端
+  菜单存在而宣称滚球端已经切换模式。
+- 涉及文件：`Device/Input/Key/device_key_input.[ch]`及README、
+  `Task/task_bringup_chassis.[ch]`及README、`config/core_config.h`、
+  `docs/DEVICE_PARAMETERS.md`、仓库/桌面`COOPERATION.md`和本记录。未修改SysConfig、BSP、
+  PeerLink、F407源码或VOFA字段。
+- 验证方式和结果：两次`tools/project.ps1 -Action Verify -Scope Auto`均通过架构/差异检查和
+  受影响host、Cortex-M0+严格编译及完整链接；随后G3519 Bring-up Debug/Release经SysConfig
+  生成并干净完整链接，FLASH分别79656/75480 B，SRAM_BANK0分别19152/19144 B，零错误。
+- 烧录与回读：用户明确授权后，DAPLink Doctor通过；显式选择序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug 79656 B。从
+  `0x00000000`按相同长度完整回读，源BIN与回读SHA-256均为
+  `08755AA28CC206E5AC737EE166E9B64DA91BE3BBF7E0F681E7E26F32FF80DCAC`，随后执行
+  `reset run`。
+- 已知限制与待确认：烧录回读不证明按键800 ms长按手感、TFT第四色行实物显示、200 mm
+  等效轮距、M4过B锁时和M5/M6过A后320 mm停车已经实车通过。先静止验证M2→M6循环、
+  短按确认颜色和硬件离线禁发车，再按M4低速记录1500/1820 mm时刻，最后分别验证M2停A
+  与M5/M6通过A语义。M6目标输入与F407接收契约需A/B双方另行冻结。
+
+## 2026-07-30：`HB/CAR`最终收口与双板部署
+
+- 修改原因：用户最终要求板间不再发送QD4310/CAN明细，只向F407提供其需要的车速、
+  ICM45686加速度计比力和Pitch角速度，并明确授权烧录两端最终Debug镜像。
+- 最终决策：活动协议只保留双向500 ms `HB`和G3519到F407的100 Hz七字段`CAR`。
+  `TEL/ENC/ACC/ACC_MEAS/DIS`的编解码、Task调用和跨板状态均已删除；停车稳定零速后仅
+  锁定G3519本地两轮。F407本地QD4310/CAN控制不变，纵向IMU预处理已接入但融合开关与
+  前馈增益均为0，不会改变滚球目标或电机控制。
+- 涉及文件：PeerLink Device/测试/README、G3519 Bring-up Task/README、
+  `docs/DEVICE_PARAMETERS.md`、双端协议文档、F407 PeerLink/Task内既有CAR消费链、
+  `COOPERATION.md`和双端process记录；未修改SysConfig引脚、Task周期或电机控制参数。
+- 验证方式和结果：TI Communication主机测试、Cortex-M0+严格编译、架构检查和差异检查
+  通过。首次烧录后工作区又完成一次用户既有的按键事件API、Bring-up Task和产品配置
+  更新；未回退该并发改动，以更新后的当前源码重新执行Auto验证并使用其clean-first产物。
+  G3519 Bring-up Debug/Release最终完整链接为FLASH `79368/75192 B`、SRAM_BANK0
+  `19152/19136 B`。F407 PeerLink CAR与ChassisImuAcceleration主机测试通过，
+  Debug/Release clean-first完整链接为FLASH `34708/30180 B`、RAM `17672/17656 B`。
+- 烧录与回读：G3519显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，最终写入当前Bring-up Debug
+  79368 B并从`0x00000000`全长回读，源BIN与回读SHA-256均为
+  `E5E0E1E4D75A56A84940B3E9EDB1323AB68E16F5F6CDBCD830E45F18BDE5385C`。F407显式选择
+  `VID:PID 0416:5051`的CMSIS-DAP，识别Cortex-M4、DEV_ID尾码`0x413`和512 KiB Flash，
+  写入Debug 34708 B并从`0x08000000`全长回读，源BIN与回读SHA-256均为
+  `56362B8704CF4822E8008C2781EF096270E2D152747D8F73F34A44A86B9E6A36`。两端校验后均已
+  执行`reset run`。
+- 已知限制：烧录回读不等于板间业务验收；最终双端镜像尚未连续抓取100 Hz CAR、验证
+  50 ms断流失效、动态ICM轴向/轮速比例或滚球前馈。F407融合和前馈保持关闭。
+- 待确认事项：保持滚球电机失能，抓取至少10 s双端HB/CAR计数、序号、sample_ms、
+  valid和UART/DMA错误；再做正反向手推、起步和制动日志，确认轴向与延迟后再讨论启用融合。
+
+## 2026-07-30：终点横杠后停车距离由210 mm缩短为150 mm
+
+- 修改原因：最新22列VOFA中，横杠在路线里程约5880/5885 mm连续两帧达到`6/8≥900`
+  并确认，目标约6090 mm、最终停车约6097 mm。用户实物确认仍偏晚，明确要求改为15 cm。
+- 最终决策：黑块条件保持“大于5路黑”和连续两帧；搜索窗口继续独立保持
+  `5931.6±120 mm`。M2目标改为标记`+150 mm`，M5/M6改为标记`+470 mm`。
+- 速度约束：250 mm/s在185 mm/s²和35 mm guard下名义制动包络约203.9 mm，无法满足
+  150 mm；终点接近速度同步改为200 mm/s，名义包络约143.1 mm，并从窗口下沿前约
+  135.1 mm开始由300 mm/s线性降速。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.[ch]`、`Task/README.md`、
+  `docs/DEVICE_PARAMETERS.md`、仓库/桌面`COOPERATION.md`和本记录。未修改ADC阈值、
+  确认帧数、窗口宽度、Task周期、SysConfig、PeerLink、F407或VOFA字段。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构、差异检查、ARM编译及
+  受影响完整链接；G3519 Bring-up Debug/Release分别使用FLASH `79656/75480 B`、
+  SRAM_BANK0 `19152/19144 B`。用户授权后，显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug `79656 B`；
+  从主Flash `0x00000000`按相同长度完整回读，源BIN与回读SHA-256均为
+  `51556E2091FFB23E11B6E0F93B4CD2BC2E8D85EF8ADE5023F38B1A9DFA5A1AD6`，随后执行
+  `reset run`。
+- 已知限制：同一VOFA还显示发车初始`v_ref≈1 mm/s`时左右目标约`-196/+199 mm/s`，说明
+  灰度差速会绕过单轮目标线性斜率；本次只修正终点停车距离，该问题仍待单独修复。
+- 待确认事项：下一圈确认约5676.5 mm后CH5从300线性降至200 mm/s，横杠确认后CH7
+  跳到约150 mm，并测量最终停车相对黑块前沿的位置。
+
+## 2026-07-30：终点横杠确认后立即开始停车
+
+- 修改原因：用户要求观察识别到黑块后的即时停车响应；此前`150 mm`附加距离已被覆盖。
+- 最终决策：`TEMPLATE_BRINGUP_FINISH_MARKER_STOP_RUNOUT_MM`改为`0.0F`。继续保持
+  `6/8≥900`、连续两帧和`5931.6±120 mm`窗口；M2在确认后立即把目标设为当前里程，
+  M5/M6仍在该基准后运行一车长，目标为标记里程`+320 mm`。
+- 行为边界：不直接清零或锁死电机，仍由现有规划器按`185 mm/s²`线性减速，因此识别后
+  立即开始制动，但物理停车距离不会为零。
+- 涉及文件：`config/core_config.h`、`Task/README.md`、`docs/DEVICE_PARAMETERS.md`、
+  仓库/桌面`COOPERATION.md`和本记录；未修改阈值、确认帧数、Task、BSP或通信。
+- 验证结果：`tools/project.ps1 -Action Verify -Scope Auto`通过；当前G3519 Bring-up
+  Debug/Release完整链接BIN分别为`80736/76408 B`。
+- 部署状态：用户明确授权后，显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入G3519 Bring-up Debug
+  `80736 B`。从主Flash `0x00000000`按相同长度完整回读，源BIN与回读SHA-256均为
+  `CB8A90A2E6642A20E58AAF25AEF809D5C17F10C9BDAF8BD343C2DB7ADB876ABC`，随后执行
+  `reset run`。
+
+## 2026-07-30：F407滚球关键量追加到COM5/VOFA
+
+- 修改原因：用户要求用DAPLink相关串口链路持续送入VOFA，避免SWD逐次读取，方便观察
+  ICM补偿、角度目标、raw、电流和phase。
+- 最终决策：G3519 PeerLink接收F407节点1的50 Hz只读`DBG`，执行规范十进制、范围、来源、
+  独立序号和100 ms本地新鲜度检查。蓝牙FireWater保留CH0～CH21，追加CH22～CH31；
+  CH31 bit9由G3519置位表示DBG新鲜，101 ms起十列全0。DBG不进入任何控制。
+- 涉及文件：`Device/Communication/PeerLink/`、`Task/task_bringup_chassis.[ch]`、Task/根README、
+  主机测试、协议/协作文档和本记录；未改Task周期、优先级、SysConfig、引脚或电机控制。
+- 验证方式和结果：Communication主机测试通过，覆盖合法边界、100/101 ms、错误来源、
+  phase越界、重复/旧序号和F407重启清旧值。Bring-up Debug/Release clean-first完整链接通过，
+  FLASH为`80768/76520 B`，SRAM_BANK0为`19216/19200 B`。
+- 已知限制：FireWater格式器尚无独立host测试，也未做双端字节互喂；旧22列约6.1 kB/s，
+  新增最坏约3.0 kB/s，理论总占用约79%，必须上板观察BUSY计数和实际帧完整性。
+- 待确认事项：烧录双端后用COM5、115200、8N1、FireWater连续采集，确认每行严格32列、
+  约50 Hz，CH31 bit9新鲜，CH22～CH30随ICM/电机状态变化，断开F407后101 ms起十列归零。
+
+## 2026-07-30：终点停车前瞻速度降至100 mm/s
+
+- 修改原因：用户实测认为横杠确认时才从`200 mm/s`停车仍然过晚，要求依据里程计提前减速。
+- 最终决策：保持黑块确认后的附加距离`0 mm`、`6/8≥900`、连续两帧和
+  `5931.6±120 mm`窗口不变；终点接近速度由`200 mm/s`降为`100 mm/s`。
+- 前瞻行为：规划器按`185 mm/s²`在窗口下沿前约`216.2 mm`开始由`300 mm/s`线性减速，
+  约在路线里程`5595.4 mm`开始，进入窗口前达到`100 mm/s`。横杠确认后继续线性减速到零。
+- 预期影响：理想匀减速制动距离由约`108.1 mm`降至`27.0 mm`，但实际仍受电机响应、
+  地面摩擦、编码器误差和带球负载影响，不能视为实物停车距离保证。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、`Task/README.md`、
+  仓库/桌面`COOPERATION.md`和本记录；未修改减速度、灰度阈值、Task、BSP或通信。
+- 验证结果：`tools/project.ps1 -Action Verify -Scope Auto`通过；当前G3519 Bring-up
+  Debug/Release完整链接BIN分别为`80768/76520 B`。
+- 部署状态：用户明确授权后，显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入G3519 Bring-up Debug
+  `80768 B`。从主Flash `0x00000000`按相同长度完整回读，源BIN与回读SHA-256均为
+  `DD4AD3109F426E02CEC9F339B1D75D63447D6E528B3FFCB17582B537E34AF1BC`，随后执行
+  `reset run`。
+
+## 2026-07-30：依据VOFA修正高速轮速PID
+
+- 数据证据：最新`vofa+.csv`为32列、5405帧，包含两次完整运行。最后一次运行中轮速目标
+  到反馈的最佳对齐约为`20 ms`；全部有效运动帧左/右轮误差偏置分别约`-37.7/-42.4 mm/s`，
+  MAE约`48.4/52.5 mm/s`。低速弯道反馈达到目标的`93%～96%`，直道高速段仅`80%～88%`。
+- 停车与航向：两次横杠确认到稳定停车分别多走约`23/40 mm`，最终里程`5868/5862 mm`；
+  停车航向相对各自发车航向残留`+5.78/+5.18°`。当前Task在速度规划稳定为零后直接锁轮，
+  没有显式停车前航向对齐，因此“车头回正”尚未完成。
+- 最终决策：只修正`>300 mm/s`高速轮速段，`Kp`由`0.20`增至`0.26`、`Ki`由`0.20`
+  增至`0.30`，`Kd=0.0005`不变；低速PID、前馈、减速度和停车参数均不修改。
+- 修改边界：仅修改`config/core_config.h`和协作/过程记录，不增加Task状态、回正动作、
+  通信字段或硬件配置。
+- 验证结果：Navigation/SpeedProfile/LineTracking host测试、ARM严格编译、架构检查和
+  G3519 Bring-up Debug/Release完整链接通过，BIN分别为`80768/76520 B`。
+- 已知限制：发车首帧仍存在`v_ref≈1 mm/s`而左右目标约`-210/+213 mm/s`的差速突跳，
+  该问题来自横向修正，不是轮速PID；本轮未修复，且尚无新PID下的VOFA闭环数据。
+- 部署状态：用户明确授权后，显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入G3519 Bring-up Debug
+  `80768 B`。从主Flash `0x00000000`按相同长度完整回读，源BIN与回读SHA-256均为
+  `C1C2BC242F6C2272521DCC8397664D7CBB973ECFDB901B3997F2A9EC633C567D`，随后执行
+  `reset run`。
+- 待确认事项：烧录后比较直道高速反馈/目标比例、MAE、超调和停车距离；航向回正应另行
+  冻结允许的原地转向速度、角度容差、稳定时间和超时后再实现。
+
+## 2026-07-30：发车与停车必须为同一位姿
+
+- 修改原因：用户明确要求“哪里发车，哪里停车”，且角度和位置都必须精准。
+- 最终决策：闭环跑圈以驱动轮轴中点为位置参考，发车时锁存位置原点与ICM相对yaw；
+  最终停车必须同时满足回到发车位置和恢复发车航向。横杠、灰度、ICM与编码器分别只承担
+  纵向锚点、横向锚点、航向锚点和前瞻连续预测，任一单项满足都不能代替整个位姿验收。
+- 覆盖关系：旧M5/M6“通过A后再运行全车长320 mm停车”被本要求否决；成绩时刻仍可在
+  通过A时锁存，但最终静止点必须回到发车位姿。M4按题目B点目标位姿单独验收。
+- 涉及文件：只更新仓库/桌面`COOPERATION.md`、`docs/H_BALANCING_BALL_CONTROL.md`和
+  本记录；未修改Task、Mode、PID、状态机、保护、通信、引脚或当前已烧录镜像。
+- 当前证据：最新两次运行停车yaw相对发车仍残留`+5.78/+5.18 deg`，当前Task在速度规划
+  稳定为零后直接锁轮，M5/M6仍在源码中增加320 mm，故当前固件明确未达标。
+- 已知限制：仅靠一圈里程无法长期保证20 mm，横杠触发仍有制动距离；是否允许低速倒车、
+  原地微转以及带球时的最终修正速度会改变安全行为，本轮未擅自决定。
+- 待确认事项：冻结角度容差、是否允许倒车/原地微转和最终低速上限后，再实现终端位姿控制；
+  验收至少连续5次记录纵向误差、横向误差、yaw误差、停车时间和低电量重复性。
+
+## 2026-07-30：26H改为单陀螺仪航向并修正路线前视
+
+- 修改原因：用户明确否决编码器航向与陀螺仪融合，要求ICM45686单独负责航向，并重新
+  对照26H题图核查轨迹；同时强调每个模式的发车点、终止点和车头角度必须精确。
+- 最终决策：关闭编码器航向低频校正。左右编码器平均值继续负责纵向里程和速度规划，
+  差分航向仅保留诊断及转向前馈所需的200 mm轮距；陀螺无效时导航更新失败，不静默回退
+  编码器航向。当前模式终点语义以Task源码为准，本轮不新增倒车、原地回正或终端状态机。
+- 轨迹核对与修正：题面及源码均为A左上、B右上、C右下、D左下，顺时针
+  `A→B→C→D→A`，AB/CD各1500 mm、BC/DA各R500半圆、总长6141.6 mm，几何公式正确。
+  INS前视由600 mm降为200 mm，并按M2/M4/M5/M6各自路线终点钳位，修复M5/M6过A后仍
+  回看第一圈A的错误。理想无扰运动学相位仿真中，600 mm的一圈最大位置误差约167 mm，
+  200 mm约10 mm；这不是实车验收。
+- 涉及文件：`config/core_config.h`、FusedNavigation Mode源码/头文件/README/主机测试、
+  `Task/task_bringup_chassis.c`及README、`docs/DEVICE_PARAMETERS.md`、仓库/桌面
+  `COOPERATION.md`和本记录。未修改BSP、SysConfig、引脚、通信协议、F407或视觉端。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查，
+  Navigation、SpeedProfile、LineTracking主机测试，Navigation/SpeedProfile Cortex-M0+
+  严格编译及受影响完整链接。G3519 Bring-up Debug/Release使用FLASH `80800/76616 B`、
+  SRAM_BANK0 `19216/19200 B`。这是增量验证，不是全量基线或实物验证。
+- 已知限制：题面停车偏差按车体中心轴唯一测试点到A基准线计算，不按灰度探头。当前
+  `5931.6±120 mm`窗口与横杠后`0 mm`附加距离没有形成可证明的`≤2 cm`关系；速度归零后
+  仍直接锁轮，也没有终端yaw微调，因此本轮不能宣称位置和角度已经实车精准。
+- 待确认事项：同次记录灰度探头触线里程、车体唯一测试点过基准线里程、最终停车纵横向
+  偏差和相对发车yaw；据此分别冻结评分偏置、停车目标和是否需要终端低速姿态修正。
+- 部署状态：用户随后明确授权烧录；显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入G3519 Bring-up Debug
+  `80800 B`。从主Flash `0x00000000`按相同长度完整回读，源BIN与回读SHA-256均为
+  `F2DE86DC777ADAD0F315D95B22B5E799F4E5753B86BC00BF8EB4482506C48055`，随后执行
+  `reset run`。该证据只证明镜像部署，不提升轨迹或停车实物结论。
+
+## 2026-07-30：M2停车目标按A线越界量前移180 mm
+
+- 修改原因：单陀螺仪/200 mm前视镜像实测后，用户确认最终停车点越过A停车基准线
+  `180 mm`；该数值是最终位置偏差，不是横杠识别后的单纯制动距离。
+- 最终决策：M2不再等横杠出现后才请求停车。发车时将纵向里程目标设为预计横杠中心
+  `5931.6 mm`前`180 mm`，即`5751.6 mm`，由既有速度规划器提前执行线性制动。横杠后
+  附加距离仍为0；M5/M6通过A后320 mm语义不变。几何路径终点与纵向停车目标解耦，
+  D→A路径不会因M2提前停车目标而被截断到5751.6 mm相位。
+- 否决方案：检测横杠后把目标设为负180 mm不能让车辆回到已经越过的位置，只会得到与
+  当前目标相同的立即减速行为；本轮不采用。把终点接近速度从100大幅降到30 mm/s也会
+  进一步恶化题目第2项20 s时限，未采用。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`及README、
+  `docs/DEVICE_PARAMETERS.md`、仓库/桌面`COOPERATION.md`和本记录。未修改Mode、PID、
+  减速度、灰度阈值、Task周期、通信、BSP、SysConfig、F407或视觉端。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查及受影响
+  Firmware完整链接；G3519 Bring-up Debug/Release使用FLASH `80848/76584 B`、
+  SRAM_BANK0 `19216/19200 B`。本轮没有新的VOFA文件或硬件复测。
+- 已知限制：180 mm只来自一次人工停车偏差，尚未形成重复统计；M2将在横杠窗口下沿
+  5811.6 mm之前按里程停车，因此本轮位置锚完全依赖轮周、打滑和本次起点一致性，横杠
+  不会在停车前提供二次校正。车头最终yaw仍未闭环验收。
+- 待确认事项：烧录后连续至少3次记录最终停车相对A的有符号偏差和CH0/CH5/CH7；若平均
+  仍有偏差，只调整`TEMPLATE_BRINGUP_M2_STOP_ADVANCE_MM`，不要同时改减速度或轮周。
+- 部署状态：本次修改后尚未获得新的烧录授权，未写入目标板。
+
+## 2026-07-30：M4改为AB直行隔离测试
+
+- 修改原因：实车在AB段出现大量循迹转向，用户要求先去掉横向控制变量，只观察最简单的
+  双轮直行和停车效果。
+- 最终决策：M4纵向目标由通过B后再运行320 mm改为1500 mm。M4运行时左右轮直接使用
+  相同的线性速度规划目标，不叠加灰度或INS差速；灰度、ICM和INS仍更新并保留VOFA观测。
+  旧M4“通过B后再运行320 mm”行为被本次隔离测试临时覆盖。M2/M3/M5/M6保持不变。
+- 行为边界：保留现有发车硬件门、灰度长时间无效后的规划停车、双轮速度PID、180/185
+  `mm/s²`加减速、电机80%限幅和停稳锁车。1500 mm是规划器目标；现有35 mm guard和
+  实车惯性仍影响最终物理停车点，不能表述为已在B点精准停车。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/task_bringup_chassis.h`、
+  `Task/README.md`和本记录；未修改Task周期、公共API、Mode、Device、BSP、SysConfig、
+  PeerLink、其他赛题模式或硬件配置。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构检查、差异检查和
+  受影响Firmware完整链接；G3519 Bring-up Debug/Release使用FLASH `80864/76616 B`、
+  SRAM_BANK0 `19216/19200 B`。这是增量构建验证，不是实物验证。
+- 部署状态：已使用本机明确指定的DAPLink写入G3519 Bring-up Debug `80864 B`；从主Flash
+  `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `F34B305BE196C0BB4B5B2D81FECAD3C4422D5396F9C209B04F179EF40CBE7D9A`，随后执行`reset run`。
+- 待确认事项：实测M4时确认CH3/CH4全程相同，并记录CH0、CH1/CH2、CH9和
+  最终停车位置；若仍明显转弯，优先检查左右轮机械/轮径差、编码器比例和双轮速度闭环，
+  不再归因于灰度或INS转向输出。
+
+## 2026-07-30：M4 AB直行加入发车航向PID
+
+- 修改原因：左右同速隔离测试后，用户要求用角度PID保证AB直行并立即烧录。
+- 最终决策：M4继续以1500 mm为纵向停车目标，并继续禁止灰度和路线前视参与转向；发车时
+  锁存ICM45686 yaw，运行中由现有`Mode_Car_AngleController`以该yaw为目标生成左右轮差速，
+  叠加在线性速度规划目标两侧。ICM导航无效时角度修正为零，不新增停机或回退状态机。
+  M2/M3/M5/M6行为、Task周期、BSP、SysConfig、引脚和通信均未改变。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/task_bringup_chassis.h`、
+  `Task/README.md`和本记录。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查和受影响固件
+  完整链接；G3519 Bring-up Debug/Release使用FLASH `82104/77960 B`、SRAM_BANK0
+  `19256/19240 B`。显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Debug `82104 B`，从主Flash
+  `0x00000000`全长回读，源BIN与回读SHA-256均为
+  `C7564B9C1092D21447573AD47C0294721C38C6B65E3162EC6E5C2733A1604A62`，随后执行
+  `reset run`。
+- 已知限制与待确认：烧录回读只证明镜像完整部署；角度PID方向、增益、左右轮机械差异和
+  1500 mm实际停车位置仍需本次AB实车运行确认。
+
+## 2026-07-30：M2改为航向回零立即停车
+
+- 修改原因：用户要求第2项不再以终点黑线作为停车触发，改为循迹航向回到发车0°时
+  立即停车，并明确要求跳过验证和烧录回读。
+- 最终决策：仅M2在进入最后半圆后检查连续惯导航向；相对发车yaw进入现有角度容差
+  `±0.5°`即立即停止并锁定两轮，最后半圆门避免发车时0°误触发。M2忽略横杠停车事件，
+  线性规划目标保留一圈加320 mm作为角度漏触发兜底。M3/M4/M5/M6保持不变。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/task_bringup_chassis.h`、
+  `Task/README.md`和本记录；未修改Task周期、Mode/Device公共API、BSP、SysConfig、引脚或通信。
+- 构建与部署：按用户要求未运行项目验证、测试、Release链接或烧录回读。仅为生成镜像完成
+  G3519 Bring-up Debug链接，FLASH/SRAM_BANK0为`82264/19256 B`；显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入`82264 B`并执行`reset run`。
+- 已知限制与待确认：本轮没有回读完整性证据；`±0.5°`触发窗口、陀螺累计漂移和直接锁停
+  的实际制动距离均待M2实车确认。
+
+## 2026-07-30：取消M2独立导航差速上限
+
+- 修改原因：用户实测M2最后航向回正过慢，要求取消左右轮差速上限并立即烧录。
+- 最终决策：仅M2把导航yaw-rate控制原单侧`±115 mm/s`半差上限放宽到每轮目标安全边界
+  `±600 mm/s`，因此不再存在独立的导航差速上限；合成后的每轮目标仍钳位在`±600 mm/s`。
+  M3/M4/M5/M6继续使用原导航配置，灰度PID、速度PID和电机80%输出限幅不变。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/task_bringup_chassis.h`、
+  `Task/README.md`和本记录；未修改公共API、BSP、SysConfig、引脚、Task周期或通信。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查和受影响固件
+  Debug/Release完整链接，FLASH为`82328/78120 B`、SRAM_BANK0为`19256/19240 B`。
+  显式选择DAPLink序列号`000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Debug
+  `82328 B`，从`0x00000000`全长回读，源BIN与回读SHA-256均为
+  `81E69C4573017A07680CB24768E2D4457B812F7797046152680311DCF37875D6`，随后执行`reset run`。
+  用户要求“不需要回读”的消息在本次回读完成后到达，因此没有再执行其他检查。
+- 已知限制与待确认：取消独立差速上限会允许更激烈的瞬时转向，实际回正速度、轮胎打滑、
+  轨迹超调和直接锁停位置仍需M2实车确认。
+
+## 2026-07-30：修复M2航向采样跨零漏停
+
+- 修改原因：最新`vofa+.csv`共2068帧、一次运行；发车yaw约`-4.08°`，最后半圆相对
+  发车yaw误差在`6138→6139 mm`由`+3.06°`跳到`-0.68°`，最接近样本仍超出原
+  `±0.5°`窗口，导致漏停并继续到约`6333 mm`里程兜底。
+- 最终决策：仅M2保留`±0.5°`命中，同时增加相邻10 ms惯导样本真实跨0°即完成；以
+  前后归一化误差之差小于180°排除`+180°/-180°`角度回绕假过零。最后半圆门、直接锁停、
+  一圈加320 mm兜底和其他模式不变。
+- 灰度核对：当前亚博模拟量链已先减去当帧八路共同最小值，再执行加权差比和
+  `(R-L)/(R+L+epsilon)`并与加权质心融合；可抑制共同加性基线和共同增益变化，但没有逐路
+  黑白标定，不能完全消除不均匀照明或通道个体差异。本轮未修改灰度算法。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/task_bringup_chassis.h`、
+  `Task/README.md`和本记录；未修改公共API、灰度Device/Algorithm、BSP、SysConfig或通信。
+- 验证方式和结果：VOFA离线复算会在上述`+3.06°→-0.68°`样本跨零时触发，并拒绝数据中
+  三次约`±180°`回绕；`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查和
+  受影响固件Debug/Release完整链接，FLASH为`82440/78232 B`、SRAM_BANK0为
+  `19256/19240 B`。
+- 已知限制与待确认：尚未烧录；离线数据只能验证判定逻辑，直接锁停里程和高差速下的实际
+  过零行为仍需新固件实车确认。
+
+## 2026-07-30：恢复M2扩大后的组合差速限幅并提前灰度使能
+
+- 修改原因：VOFA显示取消差速限制后M2出现`-600/+600 mm/s`级目标和脱轨；用户要求恢复
+  比原值更宽的限幅，并把亚博灰度主动上报使能从上电20 s提前到1 s后发送。
+- 最终决策：仅M2把导航yaw-rate半差上限设为`230 mm/s`，并在导航与灰度修正合成后再次
+  把半差钳位到`±230 mm/s`，因此左右轮目标差不超过`460 mm/s`；这是原半差
+  `115 mm/s`上限的两倍，每轮`±600 mm/s`安全边界继续保留。M3/M4/M5/M6不使用新增
+  组合限幅。亚博Device初始化1 s后仍只发送一次`$0,1,0#`，不增加重试或状态机。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、`Task/README.md`、
+  `Device/Sensor/LineTracking/YahboomTrack/device_yahboom_track.h`及其README、
+  `docs/DEVICE_PARAMETERS.md`和本记录；未修改BSP、SysConfig、引脚、公共API或Task周期。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查、
+  LineTracking host/ARM检查和受影响完整链接；G3519 Bring-up Debug/Release FLASH为
+  `82536/78328 B`，SRAM_BANK0为`19256/19240 B`。显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Debug `82536 B`；从主Flash
+  `0x00000000`全长回读，源BIN与回读SHA-256均为
+  `51628A3C37AD9D9A1BCA8BCDAECF0A6ACF8F58BC07613882FC694C4CEEDD8A41`，随后执行
+  `reset run`。该镜像也包含上一条M2真实跨0°立即停车修复。
+- 已知限制与待确认：回读只证明镜像完整部署；`230 mm/s`半差限幅的循迹效果，以及灰度
+  模块冷上电1 s时能否稳定接收一次性使能命令，仍需实车确认。
+
+## 2026-07-30：M2改为惯导主控、灰度仅辅助
+
+- 修改原因：用户要求加强两段直线的直走，并明确灰度循迹只应作为指导，不能成为主要
+  转向来源；第二个半圆结束后仍须在车头回到发车方向时立即停车。
+- 最终决策：仅M2在AB使用发车绝对yaw、在CD使用发车yaw加180°作为角度PID目标，两段
+  直线不叠加路线前视转向；BC/DA两个半圆继续由INS几何前视主控。灰度PID输出只按20%
+  叠加为辅助修正，灰度失鲜或丢线不再请求M2停车。最后半圆内命中发车相对yaw
+  `±0.5°`或真实跨0°仍立即锁停，`±230 mm/s`组合半差和每轮`±600 mm/s`限幅不变。
+  M3/M4/M5/M6保持原控制和灰度失鲜停车行为。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、
+  `Task/task_bringup_chassis.h`、`Task/README.md`和本记录；未修改公共API、Mode、Device、
+  BSP、SysConfig、引脚、Task周期或通信。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查和受影响
+  固件Debug/Release完整链接；G3519 Bring-up Debug/Release FLASH为`83080/78760 B`，
+  SRAM_BANK0为`19256/19240 B`。这是构建验证，未烧录、未做实车验证。
+- 已知限制与待确认：20%灰度辅助比例、直线角度PID强度、弯道INS轨迹以及第二半圆直接
+  锁停位置均需实车确认。
+
+## 2026-07-30：M2第二半圆改为连续圆弧并按一圈里程停车
+
+- 修改原因：第二半圆末端前视点固定在A后可能落到车后并触发回头转向；用户要求先把
+  第二半圆当作普通循迹圆，并明确纠正为“根据里程计，跑完一圈就停车”。
+- 最终决策：仅M2删除最后半圆的`0°±0.5°`及真实跨零直接锁停，纵向目标改为左右编码器
+  平均里程一圈`6141.6 mm`。D→A保持与B→C相同的300 mm/s圆弧速度上限，最终减速只由
+  一圈里程目标的既有制动包络产生。几何前视路线额外保留200 mm并跨过A接入AB，避免
+  停车前把目标钳在A；这不增加纵向行驶目标。终点横杠仍不触发M2停车。
+- 否决方案：先提出的“A后继续320 mm再停车”被用户明确否决，M2不采用该行为。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/README.md`、`config/core_config.h`和
+  本记录；未修改Mode/Device公共API、Task周期、BSP、SysConfig、引脚或通信。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查和受影响
+  固件Debug/Release完整链接；G3519 Bring-up Debug/Release FLASH为`82808/78536 B`，
+  SRAM_BANK0为`19256/19240 B`。显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Debug`82808 B`，从主Flash
+  `0x00000000`按相同长度完整回读，源BIN与回读SHA-256均为
+  `77C48426594E06DA1DFECB809B7F51DFB86CAE33511E670DA07EF721D3B84BDC`，随后执行
+  `reset run`。
+- 已知限制与待确认：回读只证明镜像完整部署；平均轮里程仍受轮周误差和打滑影响，
+  `6141.6 mm`规划目标的实际停车位置及第二半圆轨迹需实车确认。
+
+## 2026-07-30：提高M2灰度辅助并修正圆弧差速
+
+- 修改原因：最新VOFA中两次D→A半圆实际只转约`169.6°/170.7°`，等效半径约
+  `530.5/527.1 mm`，持续大于R500；同时CD段灰度绝对误差均值约`0.367`，约76%的样本
+  不低于`0.3`，原20%灰度辅助不足以消除持续横向偏差。
+- 最终决策：仅M2把灰度PID辅助比例从20%提高到30%；BC/DA使用INS几何前视时，只把
+  导航左右目标的半差放大`1.06`倍，并保持导航平均轮速不变。真实R500路线几何、
+  `6141.6 mm`一圈里程目标、300 mm/s圆弧速度、`±230 mm/s`组合半差和每轮
+  `±600 mm/s`限幅均不改变。AB/CD角度PID与其他比赛模式不使用该圆弧倍率。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、`Task/README.md`和
+  本记录；未修改Mode/Device公共API、Task周期、BSP、SysConfig、引脚或通信。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查和
+  受影响固件Debug/Release完整链接；G3519 Bring-up Debug/Release FLASH为
+  `82888/78632 B`，SRAM_BANK0为`19256/19240 B`。显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Debug`82888 B`，从主Flash
+  `0x00000000`按相同长度完整回读，源BIN与回读SHA-256均为
+  `10D460C60D57087633C9132706A898F63C92C28745FF4074CCA01EB3DEE64F87`，随后执行
+  `reset run`。
+- 已知限制与待确认：回读只证明镜像完整部署；`1.06`来自两次实测的近似反算，灰度
+  提高后与惯导在第二半圆末端可能互相抵消，须用新VOFA复测两个半圆转角、灰度误差和
+  最终航向。
+
+## 2026-07-30：M2改为全程灰度循迹并保留一圈里程停车
+
+- 修改原因：将灰度阵列前置230 mm加入INS几何并增强圆弧角速度/轮速环后，用户实测
+  误差明显恶化，明确否决继续混合惯导，要求M2改为完全循迹。
+- 最终决策：仅M2全程使用亚博灰度循迹的完整差速输出，不再叠加INS路线前视或AB/CD
+  绝对yaw PID；ICM继续采集供显示和VOFA，但不作为M2发车门槛。左右编码器平均里程
+  仍开启并以`6141.6 mm`作为正常停车目标；终点横杠仍不触发M2停车。灰度失鲜或丢线
+  超过既有250 ms缓冲后请求规划停车，M2半差`±230 mm/s`、单轮`±600 mm/s`不变。
+  上一版230 mm INS跟踪点偏置、M2专用角速度环和增强轮速PID方案已被本版撤销。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、
+  `Task/task_bringup_chassis.h`、`Task/README.md`和本记录；未修改公共API、Task周期、
+  BSP、SysConfig、引脚、通信或其他比赛模式。
+- 验证与部署：按用户要求直接准备烧录，只执行必需的G3519 Bring-up Debug完整链接，
+  FLASH/SRAM_BANK0为`82488/19256 B`。显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Debug `82488 B`；从主Flash
+  `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `71D97D942B1317E338978E0DAC2E9ED2C3750831CE5275EB69D29CF766C8DB9E`，随后执行
+  `reset run`。未运行Auto/Release/host测试。
+- 已知限制与待确认：回读只证明镜像完整部署；纯灰度循迹的直线稳定性、两个半圆轨迹、
+  丢线停车和`6141.6 mm`最终停点仍需本次实车确认。
+
+## 2026-07-30：M2识别终点黑标后继续循迹230 mm停车
+
+- 修改原因：最新纯灰度VOFA显示M2按理论一圈里程在`6106 mm`停稳，但灰度在
+  `5726～5755 mm`出现唯一的八路共同抬高脉冲，峰值位于`5745 mm`；车辆越过该物理
+  标记后继续约361 mm，说明`6141.6 mm`不适合作为当前轮轴路径的主要停点。
+- 最终决策：M2仍全程纯灰度循迹；在`5800±300 mm`末段窗口先见普通帧后，候选必须
+  同时满足至少6/8路原始ADC不低于900、八路平均值不低于1700，并连续两个新帧成立。
+  确认后把纵向目标改为标记里程加`230 mm`，该距离按用户要求定义在
+  `task_bringup_chassis.c`顶部宏；减速期间继续灰度循迹。原`6141.6 mm`目标只作漏检
+  兜底，其他模式原有标记后距离不变。
+- 防误识别证据：离线回放5872帧VOFA，最新运行只在`5731 mm`满足连续确认；另一趟在
+  `6019 mm`确认，两趟无强共同抬高的运行不触发。最新运行搜索窗内普通单线八路均值
+  低于1700，不能仅靠原6/8路`>=900`误判。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/task_bringup_chassis.h`、
+  `Task/README.md`、`config/core_config.h`、`docs/DEVICE_PARAMETERS.md`和本记录；
+  未修改公共API、Task周期、BSP、SysConfig、引脚或通信。
+- 验证与部署：`git diff --check`通过；最新/历史VOFA离线判据回放通过；G3519 Bring-up
+  Debug完整链接通过，FLASH/SRAM_BANK0为`82504/19256 B`。未运行Auto、Release或host
+  测试。显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Debug `82504 B`；从主Flash
+  `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `955BC86396E1915561F38ED089B907C847B31ADFB084CF4E779C64DF3A595D12`，随后执行
+  `reset run`。
+- 已知限制与待确认：1700平均阈值和230 mm后续距离来自当前VOFA与安装尺寸，仍需新一趟
+  实车确认标记只触发一次、CH7在标记后跳到约230 mm，并测量最终相对A的有符号偏差。
+
+## 2026-07-30：M2终点标记后纯灰度循迹距离调整为180 mm
+
+- 修改原因：最新9611帧VOFA中，最近两趟均在约5724～5728 mm确认终点横杠并更新目标；
+  230 mm配置下，确认后实走约221 mm和242 mm，用户要求将后续距离缩短至180 mm。
+- 最终决策：只把`task_bringup_chassis.c`顶部M2标记后距离宏改为`180.0F`。全程纯灰度
+  循迹、`5800±300 mm`搜索窗、先见普通帧布防、6/8路ADC不低于900、八路平均不低于
+  1700、连续两个新帧确认，以及`6141.6 mm`漏检兜底均保持不变。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/task_bringup_chassis.h`、
+  `Task/README.md`、`docs/DEVICE_PARAMETERS.md`和本记录；未修改公共API、Task周期、BSP、
+  SysConfig、引脚、通信、循迹算法或防误识别阈值。
+- 验证与部署：最新VOFA离线检查确认最近两趟触发帧分别为8/8路过阈值、八路平均2044
+  和1896；G3519 Bring-up Debug完整链接通过，FLASH/SRAM_BANK0为`82504/19256 B`。
+  显式选择DAPLink序列号`000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入
+  Bring-up Debug `82504 B`；从主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `DFCC5D513EED8C66EA37A45344914F6D05B68145420B2BACE9BB01676E10405B`，随后执行
+  `reset run`。未运行Auto、Release或host测试。
+- 已知限制与待确认：横杠处约300 mm/s且规划减速度185 mm/s²，理论制动距离约243 mm；
+  将目标改为180 mm不保证实车只前进180 mm，最终停车位置仍须实测。
+
+## 2026-07-30：M2终点窗口前降至220 mm/s并保留完整循迹差速
+
+- 修改原因：最新12853帧VOFA中，180 mm固件的最近两趟均在约5724 mm确认横杠，目标
+  均更新到约5901 mm，但确认时纵向参考速度仍为298 mm/s，CH8制动触发距离为278 mm、
+  CH7只剩177 mm；最终分别在5940 mm和5961 mm停稳，标记后实走216 mm和237 mm。
+- 最终决策：仅M2在D→A末段按既有185 mm/s²线性包络，从300 mm/s降至220 mm/s，并
+  在`5800±300 mm`搜索窗下沿前达到该速度。220 mm/s对应当前含35 mm保护距离的制动
+  包络约166 mm，小于180 mm标记后目标。灰度循迹仍以100%比例叠加，M2半差
+  `±230 mm/s`、左右差`460 mm/s`及单轮`±600 mm/s`限幅均不变；其他模式仍使用
+  100 mm/s终点接近速度。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、
+  `Task/task_bringup_chassis.h`、`Task/README.md`、`docs/DEVICE_PARAMETERS.md`和本记录；
+  未修改公共API、Task周期、BSP、SysConfig、引脚、通信、标记判据或停车后续距离。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查及映射
+  到的固件Debug/Release完整链接；G3519 Bring-up Debug/Release FLASH为
+  `82552/78312 B`，SRAM_BANK0为`19256/19240 B`。显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug `82552 B`；
+  从主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `CD2898FBA729ACBB0DF6E2DC64D97E573113B8CBFCCF7695F73261723738B22B`，随后执行
+  `reset run`。尚未做实车验证。
+- 已知限制与待确认：166 mm为当前规划器计算值，不是实车刹停测量；须在烧录后用新VOFA
+  确认横杠处CH5已降至约220 mm/s、CH8小于CH7，并测量最终相对A的有符号偏差。

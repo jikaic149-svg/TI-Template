@@ -25,10 +25,25 @@ bool Device_KeyInput_Init(
     return true;
 }
 
+bool Device_KeyInput_Update(Device_KeyInput *input, uint32_t now_ms)
+{
+    bool raw_pressed;
+
+    return (input != NULL) && input->initialized &&
+        BSP_Key_Read((BSP_Key_Handle)input->backend, &raw_pressed) &&
+        Device_Key_Update(&input->key, raw_pressed, now_ms);
+}
+
+bool Device_KeyInput_ReadEvent(
+    Device_KeyInput *input, Device_Key_Event *event)
+{
+    return (input != NULL) && input->initialized &&
+        Device_Key_ReadEvent(&input->key, event);
+}
+
 bool Device_KeyInput_UpdatePressedEdge(
     Device_KeyInput *input, uint32_t now_ms, bool *pressed_edge)
 {
-    bool raw_pressed;
     bool was_pressed;
     bool is_pressed;
 
@@ -36,12 +51,11 @@ bool Device_KeyInput_UpdatePressedEdge(
         *pressed_edge = false;
     }
     if ((input == NULL) || !input->initialized ||
-        (pressed_edge == NULL) ||
-        !BSP_Key_Read((BSP_Key_Handle)input->backend, &raw_pressed)) {
+        (pressed_edge == NULL)) {
         return false;
     }
     was_pressed = Device_Key_IsPressed(&input->key);
-    if (!Device_Key_Update(&input->key, raw_pressed, now_ms)) {
+    if (!Device_KeyInput_Update(input, now_ms)) {
         return false;
     }
     is_pressed = Device_Key_IsPressed(&input->key);

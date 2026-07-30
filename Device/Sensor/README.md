@@ -6,5 +6,5 @@
 - `Encoder/`：编码器累计值、增量、速度与里程。
 - `IMU/`：通用 IMU、BMI088、ICM-45686、JY61P 与棱科 M0。
 - `LineTracking/`：数字/模拟多通道循迹的权重、位置、偏差、丢线与交叉口识别；
-  `XinliuT8/` 解析 UART 查询返回的八路 ADC并走模拟量路径，`Ganwei/` 绑定感为
-  DATA/CLK 八路数字采样并只走数字量路径。
+  `XinliuT8/` 解析 UART 查询返回，`YahboomTrack/` 解析 UART 主动上报的八路 ADC，
+  两者均可走既有模拟量路径；`Ganwei/` 绑定 DATA/CLK 八路数字采样并只走数字量路径。

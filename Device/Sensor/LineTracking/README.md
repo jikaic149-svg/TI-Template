@@ -21,8 +21,9 @@
 加权后的左右分母判断有无线，否则靠近中心、位置权重较小的有效通道会被误判为丢线。
 模拟量置信度同样来自八路总差值，不受产品方向权重影响。
 
-当前两个具体器件入口保持分离：芯流 T8 的 UART ADC 快照调用
-`Device_LineTracking_UpdateAnalogRaw()`；感为（Ganwei）DATA/CLK Device 通过 BSP 取得八路
+当前具体器件入口保持分离：芯流 T8 查询帧和亚博主动上报帧都只生成原始 UART ADC
+快照，由产品选择是否调用 `Device_LineTracking_UpdateAnalogRaw()`；感为（Ganwei）
+DATA/CLK Device 通过 BSP 取得八路
 数字电平并调用 `Device_LineTracking_Update()`。数字量路径保留逐通道阈值、位图和
 交叉口判定，后续接 `Mode_Car_DigitalTracking`；模拟量路径接
 `Mode_Car_AnalogTracking`。

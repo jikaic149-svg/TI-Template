@@ -10,7 +10,12 @@ typedef struct {
     float euler_deg[3];
     float yaw_zeroed_deg;
     uint32_t last_valid_frame_ms;
+    /* Timestamp/count owned specifically by checksum-valid 0x53 frames.
+     * Consumers must use this pair when synchronizing an Euler angle: the
+     * generic timestamp may have been refreshed by a newer 0x51/0x52 frame. */
+    uint32_t last_euler_frame_ms;
     uint32_t valid_frame_count;
+    uint32_t euler_frame_count;
     uint32_t checksum_error_count;
     bool has_acceleration;
     bool has_angular_rate;

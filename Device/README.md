@@ -18,6 +18,7 @@ Device/
 │  ├─ Encoder/                累计值、增量、速度、里程
 │  ├─ LineTracking/           循迹归一化、差比和、丢线、交叉口
 │  │  ├─ XinliuT8/            芯流 T8 八路 ADC UART 查询协议
+│  │  ├─ YahboomTrack/        亚博八路模拟量 UART 主动上报协议
 │  │  └─ Ganwei/              感为八路数字量 DATA/CLK 接入
 │  └─ IMU/
 │     ├─ device_imu.*         通用 IMU 融合与安装方向接口
@@ -55,6 +56,7 @@ TEMPLATE_ENABLE_DEVICE_POWER_SWITCH
 TEMPLATE_ENABLE_DEVICE_QD4310
 TEMPLATE_ENABLE_DEVICE_LINE_TRACKING
 TEMPLATE_ENABLE_DEVICE_XINLIU_T8
+TEMPLATE_ENABLE_DEVICE_YAHBOOM_TRACK
 TEMPLATE_ENABLE_DEVICE_GANWEI
 TEMPLATE_ENABLE_DEVICE_SERIAL
 TEMPLATE_ENABLE_DEVICE_LORA

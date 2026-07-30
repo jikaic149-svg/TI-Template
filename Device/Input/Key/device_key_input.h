@@ -21,6 +21,9 @@ typedef struct {
 bool Device_KeyInput_Init(
     Device_KeyInput *input, const Device_KeyInput_Config *config,
     uint32_t now_ms);
+bool Device_KeyInput_Update(Device_KeyInput *input, uint32_t now_ms);
+bool Device_KeyInput_ReadEvent(
+    Device_KeyInput *input, Device_Key_Event *event);
 bool Device_KeyInput_UpdatePressedEdge(
     Device_KeyInput *input, uint32_t now_ms, bool *pressed_edge);
 

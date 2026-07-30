@@ -23,7 +23,8 @@ typedef struct {
      * first-order complementary correction with this time constant. */
     float heading_correction_time_constant_seconds;
     /* False keeps encoder heading as diagnostic data but propagates pose yaw
-     * only from the bias-corrected gyro. */
+     * only from the bias-corrected gyro. A missing gyro then rejects the
+     * update instead of falling back to differential odometry. */
     bool encoder_heading_correction_enabled;
     /* When enabled, reject encoder heading correction while the encoder and
      * gyro yaw rates disagree. Enter must be greater than exit; recovery
@@ -47,8 +48,10 @@ typedef struct {
     float measured_left_speed_mm_per_second;
     float measured_right_speed_mm_per_second;
     /* Bias-corrected body yaw rate. Positive must agree with
-     * (right_distance-left_distance)/track_width. */
+     * (right_distance-left_distance)/track_width. When invalid, encoder-yaw
+     * fallback is available only if encoder heading correction is enabled. */
     float measured_yaw_rate_deg_per_second;
+    bool measured_yaw_rate_valid;
     /* The planned path is referenced to a point in front of the drive axle.
      * Task supplies that longitudinal offset and a forward lookahead point. */
     float tracking_point_offset_mm;
@@ -76,6 +79,7 @@ typedef struct {
     float effort_left_percent;
     float effort_right_percent;
     bool slip_gate_active;
+    bool yaw_rate_fallback_active;
 } Mode_Car_FusedNavigationOutput;
 
 typedef struct {

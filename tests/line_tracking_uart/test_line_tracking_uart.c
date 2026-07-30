@@ -8,6 +8,7 @@
 #include "bsp_line_sensor.h"
 #include "device_ganwei.h"
 #include "device_line_tracking.h"
+#include "device_yahboom_track.h"
 #include "device_xinliu_t8.h"
 #include "mode_car.h"
 #include "mode_car_control.h"
@@ -177,6 +178,116 @@ static bool test_rejection_and_resynchronization(void)
     CHECK(stats.checksum_errors == 1U);
     CHECK(stats.format_errors == 1U);
     CHECK(stats.discarded_bytes >= 2U);
+    return true;
+}
+
+static Device_YahboomTrack_FeedResult feed_yahboom_frame(
+    Device_YahboomTrack *device,
+    const char *frame,
+    uint32_t now_ms)
+{
+    Device_YahboomTrack_FeedResult result =
+        DEVICE_YAHBOOM_TRACK_FEED_IN_PROGRESS;
+
+    for (size_t index = 0U; frame[index] != '\0'; ++index) {
+        result = Device_YahboomTrack_FeedByte(
+            device, now_ms, (uint8_t)frame[index]);
+    }
+    return result;
+}
+
+static bool test_yahboom_command_and_analog_report(void)
+{
+    static const uint8_t expected_command[
+        DEVICE_YAHBOOM_TRACK_START_COMMAND_SIZE] = {
+        '$', '0', ',', '1', ',', '0', '#',
+    };
+    static const char report[] =
+        "$A,x1:4096,x2:0,x3:40,x4:450,x5:110,"
+        "x6:65535,x7:780,x8:80#";
+    static const uint16_t expected_adc[
+        DEVICE_YAHBOOM_TRACK_CHANNEL_COUNT] = {
+        4096U, 0U, 40U, 450U, 110U, 65535U, 780U, 80U,
+    };
+    Device_YahboomTrack device;
+    Device_YahboomTrack_Snapshot snapshot;
+    Device_YahboomTrack_Stats stats;
+    uint8_t command[DEVICE_YAHBOOM_TRACK_START_COMMAND_SIZE];
+    size_t command_length = 99U;
+
+    CHECK(Device_YahboomTrack_Init(&device));
+    CHECK(Device_YahboomTrack_BuildStartCommand(
+        command, sizeof(command), &command_length));
+    CHECK(command_length == sizeof(expected_command));
+    CHECK(memcmp(command, expected_command, sizeof(expected_command)) == 0);
+
+    for (size_t index = 0U; index < 9U; ++index) {
+        CHECK(Device_YahboomTrack_FeedByte(
+            &device, 321U, (uint8_t)report[index]) ==
+            DEVICE_YAHBOOM_TRACK_FEED_IN_PROGRESS);
+    }
+    CHECK(feed_yahboom_frame(&device, &report[9], 321U) ==
+        DEVICE_YAHBOOM_TRACK_FEED_SAMPLE_READY);
+    CHECK(Device_YahboomTrack_GetLatest(&device, &snapshot));
+    CHECK(snapshot.received_at_ms == 321U);
+    CHECK(snapshot.sequence == 1U);
+    for (size_t index = 0U;
+         index < DEVICE_YAHBOOM_TRACK_CHANNEL_COUNT;
+         ++index) {
+        CHECK(snapshot.adc[index] == expected_adc[index]);
+    }
+    CHECK(Device_YahboomTrack_GetStats(&device, &stats));
+    CHECK(stats.accepted_frames == 1U);
+    CHECK(stats.rejected_frames == 0U);
+    CHECK(Device_YahboomTrack_SnapshotFresh(&snapshot, 421U, 100U));
+    CHECK(!Device_YahboomTrack_SnapshotFresh(&snapshot, 422U, 100U));
+    return true;
+}
+
+static bool test_yahboom_rejection_and_resynchronization(void)
+{
+    static const char valid[] =
+        "$A,x1:1,x2:2,x3:3,x4:4,x5:5,x6:6,x7:7,x8:8#";
+    Device_YahboomTrack device;
+    Device_YahboomTrack_Snapshot snapshot;
+    Device_YahboomTrack_Stats stats;
+
+    CHECK(Device_YahboomTrack_Init(&device));
+    CHECK(feed_yahboom_frame(&device,
+        "noise$A,x1:1,x2:2,x3:3,x5:5,x4:4,x6:6,x7:7,x8:8#",
+        10U) == DEVICE_YAHBOOM_TRACK_FEED_FRAME_REJECTED);
+    CHECK(feed_yahboom_frame(&device,
+        "$A,x1:65536,x2:2,x3:3,x4:4,x5:5,x6:6,x7:7,x8:8#",
+        20U) == DEVICE_YAHBOOM_TRACK_FEED_FRAME_REJECTED);
+    CHECK(feed_yahboom_frame(&device,
+        "$A,x1:99$A,x1:1,x2:2,x3:3,x4:4,x5:5,x6:6,x7:7,x8:8#",
+        30U) == DEVICE_YAHBOOM_TRACK_FEED_SAMPLE_READY);
+    CHECK(Device_YahboomTrack_GetLatest(&device, &snapshot));
+    CHECK(snapshot.sequence == 1U);
+    CHECK(snapshot.adc[0] == 1U);
+
+    CHECK(Device_YahboomTrack_FeedByte(
+        &device, 40U, (uint8_t)'$') ==
+        DEVICE_YAHBOOM_TRACK_FEED_IN_PROGRESS);
+    for (size_t index = 1U;
+         index < DEVICE_YAHBOOM_TRACK_FRAME_CAPACITY;
+         ++index) {
+        CHECK(Device_YahboomTrack_FeedByte(
+            &device, 40U, (uint8_t)'q') ==
+            DEVICE_YAHBOOM_TRACK_FEED_IN_PROGRESS);
+    }
+    CHECK(Device_YahboomTrack_FeedByte(
+        &device, 40U, (uint8_t)'q') ==
+        DEVICE_YAHBOOM_TRACK_FEED_FRAME_REJECTED);
+    CHECK(feed_yahboom_frame(&device, valid, 50U) ==
+        DEVICE_YAHBOOM_TRACK_FEED_SAMPLE_READY);
+    CHECK(Device_YahboomTrack_GetStats(&device, &stats));
+    CHECK(stats.accepted_frames == 2U);
+    CHECK(stats.rejected_frames == 4U);
+    CHECK(stats.format_errors == 3U);
+    CHECK(stats.value_overflow_errors == 1U);
+    CHECK(stats.overlength_frames == 1U);
+    CHECK(stats.discarded_bytes >= 5U);
     return true;
 }
 
@@ -457,9 +568,11 @@ int main(void)
 {
     CHECK(test_query_and_manual_response());
     CHECK(test_rejection_and_resynchronization());
+    CHECK(test_yahboom_command_and_analog_report());
+    CHECK(test_yahboom_rejection_and_resynchronization());
     CHECK(test_normalization_difference_sum_and_modes());
     CHECK(test_per_channel_calibration());
     CHECK(test_ganwei_digital_path());
-    puts("Xinliu T8 analog and Ganwei digital line-tracking tests: PASS");
+    puts("Xinliu, Yahboom analog and Ganwei digital line-tracking tests: PASS");
     return 0;
 }

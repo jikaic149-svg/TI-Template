@@ -10,27 +10,41 @@
 
 #define DEVICE_PEER_LINK_BAUD_RATE UINT32_C(115200)
 #define DEVICE_PEER_LINK_RX_CHUNK_CAPACITY ALGORITHM_PACKET_MAX_FRAME_SIZE
-#define DEVICE_PEER_LINK_TX_PAYLOAD_CAPACITY 40U
+#define DEVICE_PEER_LINK_TX_PAYLOAD_CAPACITY 64U
 
-typedef struct {
-    uint8_t motor_id;
-    bool enabled;
-    int32_t current_milliamps;
-    int32_t speed_centi_rpm;
-    uint32_t angle_milliradians;
-    bool online;
-    uint32_t received_at_ms;
-    bool valid;
-} Device_PeerLink_Telemetry;
+#define DEVICE_PEER_LINK_CAR_SPEED_ABS_MAX_MM_PER_SECOND INT32_C(5000)
+#define DEVICE_PEER_LINK_CAR_ACCEL_ABS_MAX_MM_PER_SECOND2 INT32_C(50000)
+#define DEVICE_PEER_LINK_CAR_PITCH_RATE_ABS_MAX_CENTI_DPS INT32_C(100000)
+#define DEVICE_PEER_LINK_DEBUG_STATUS_MASK UINT16_C(0x01FF)
 
+/* G3519(node 2) -> F407(node 1) latest chassis sample. Acceleration and
+ * angular rate already use the Device_IMU body frame: +X forward, +Y left,
+ * +Z up. The current physical sensor-to-body mapping remains a product
+ * mounting fact and must be confirmed on hardware. */
 typedef struct {
-    uint8_t motor_id;
-    /* QD4310 CAN feedback data[6..7], no unit, exact uint16 protocol value. */
-    uint16_t angle_raw;
-    bool online;
-    uint32_t received_at_ms;
+    uint32_t sample_ms;
+    int32_t speed_x_mm_per_second;
+    int32_t acceleration_x_mm_per_second2;
+    int32_t acceleration_z_mm_per_second2;
+    int32_t pitch_rate_centi_dps;
     bool valid;
-} Device_PeerLink_AbsoluteEncoder;
+    uint32_t received_at_ms;
+} Device_PeerLink_CarState;
+
+/* F407(node 1) -> G3519(node 2) fixed-point debug Latest Value. */
+typedef struct {
+    int32_t chassis_acceleration_mm_s2;
+    int32_t chassis_compensation_mdeg;
+    int32_t rod_command_mdeg;
+    uint16_t motor_target_raw;
+    uint16_t motor_feedback_raw;
+    int32_t motor_command_current_ma;
+    int32_t motor_feedback_current_ma;
+    int32_t motor_speed_centi_rpm;
+    uint8_t control_phase;
+    uint16_t status_flags;
+    uint32_t received_at_ms;
+} Device_PeerLink_DebugTelemetry;
 
 typedef struct {
     size_t transport_index;
@@ -53,24 +67,19 @@ typedef struct {
     uint32_t heartbeat_payload_error_count;
     uint32_t heartbeat_source_error_count;
     uint32_t duplicate_sequence_count;
-    uint32_t telemetry_tx_count;
-    uint32_t telemetry_tx_drop_count;
-    uint32_t telemetry_tx_error_count;
-    uint32_t telemetry_rx_count;
-    uint32_t telemetry_payload_error_count;
-    uint32_t telemetry_source_error_count;
-    uint32_t telemetry_duplicate_sequence_count;
-    uint32_t encoder_rx_count;
-    uint32_t encoder_payload_error_count;
-    uint32_t encoder_source_error_count;
-    uint32_t encoder_duplicate_sequence_count;
-    uint32_t motor_disable_tx_count;
-    uint32_t motor_disable_tx_drop_count;
-    uint32_t motor_disable_tx_error_count;
-    uint32_t motor_disable_rx_count;
-    uint32_t motor_disable_payload_error_count;
-    uint32_t motor_disable_source_error_count;
-    uint32_t motor_disable_duplicate_sequence_count;
+    uint32_t car_state_tx_count;
+    uint32_t car_state_tx_drop_count;
+    uint32_t car_state_tx_error_count;
+    uint32_t car_state_rx_count;
+    uint32_t car_state_payload_error_count;
+    uint32_t car_state_source_error_count;
+    uint32_t car_state_duplicate_sequence_count;
+    uint32_t car_state_sample_time_error_count;
+    uint32_t debug_rx_count;
+    uint32_t debug_payload_error_count;
+    uint32_t debug_source_error_count;
+    uint32_t debug_duplicate_sequence_count;
+    uint32_t debug_old_sequence_count;
     uint32_t step_error_count;
     BSP_UART_RxStatus uart_rx;
 } Device_PeerLink_Status;
@@ -86,21 +95,21 @@ typedef struct {
     uint8_t rx_chunk[DEVICE_PEER_LINK_RX_CHUNK_CAPACITY];
     uint8_t tx_payload[DEVICE_PEER_LINK_TX_PAYLOAD_CAPACITY];
     uint8_t tx_frame[ALGORITHM_PACKET_MAX_FRAME_SIZE];
-    Device_PeerLink_Telemetry remote_telemetry;
-    Device_PeerLink_AbsoluteEncoder remote_encoder;
+    Device_PeerLink_CarState remote_car_state;
+    Device_PeerLink_DebugTelemetry remote_debug_telemetry;
     uint32_t next_heartbeat_tx_ms;
     uint16_t heartbeat_tx_sequence;
-    uint16_t telemetry_tx_sequence;
-    uint16_t motor_disable_tx_sequence;
+    uint16_t car_state_tx_sequence;
     uint16_t last_heartbeat_rx_sequence;
-    uint16_t last_telemetry_rx_sequence;
-    uint16_t last_encoder_rx_sequence;
-    uint16_t last_motor_disable_rx_sequence;
+    uint16_t last_car_state_rx_sequence;
+    uint16_t last_debug_rx_sequence;
+    uint32_t last_car_state_sample_ms;
     bool heartbeat_rx_sequence_seen;
-    bool telemetry_rx_sequence_seen;
-    bool encoder_rx_sequence_seen;
-    bool motor_disable_rx_sequence_seen;
-    bool motor_disable_pending;
+    bool car_state_rx_sequence_seen;
+    bool car_state_sample_time_seen;
+    bool remote_car_state_seen;
+    bool debug_rx_sequence_seen;
+    bool remote_debug_telemetry_seen;
     bool initialized;
 } Device_PeerLink;
 
@@ -113,36 +122,27 @@ bool Device_PeerLink_Init(
  * error but never stops other product functions; call again next Task cycle. */
 bool Device_PeerLink_Step(Device_PeerLink *link, uint32_t now_ms);
 
-/* Queue one fixed-format F407 motor telemetry frame. BUSY drops the complete
- * frame without blocking or advancing its sequence and is reported in
- * status; false is reserved for invalid data or transport/API errors. */
-bool Device_PeerLink_SendTelemetry(
+/* Queue one G3519 chassis sample. BUSY drops the complete frame without
+ * blocking or advancing its independent sequence. Invalid samples must carry
+ * zero for all four physical fields. */
+bool Device_PeerLink_SendCarState(
     Device_PeerLink *link,
-    const Device_PeerLink_Telemetry *telemetry);
+    const Device_PeerLink_CarState *state);
 
-/* Queue one idempotent G3519(node 2) -> F407(node 1) request to disable the
- * F407 primary motor. BUSY drops the complete request without blocking or
- * advancing its independent sequence. There is no ACK or automatic retry. */
-bool Device_PeerLink_SendMotorDisableRequest(Device_PeerLink *link);
-
-/* Consume one pending, validated motor-disable request. Repeated calls return
- * false until another valid DIS frame arrives. Intended for the F407 Task. */
-bool Device_PeerLink_TakeMotorDisableRequest(Device_PeerLink *link);
-
-/* Copy the latest validated F407 absolute-encoder raw value. The caller
- * chooses the display freshness window and must separately honor online. */
-bool Device_PeerLink_GetRemoteAbsoluteEncoder(
+/* Copy the latest syntactically valid CAR frame. Local receive age, not the
+ * remote sample clock, owns freshness; callers separately honor state.valid. */
+bool Device_PeerLink_GetRemoteCarState(
     const Device_PeerLink *link,
     uint32_t now_ms,
     uint32_t maximum_age_ms,
-    Device_PeerLink_AbsoluteEncoder *encoder);
+    Device_PeerLink_CarState *state);
 
-/* Copy the latest valid remote telemetry. Returns false when no frame has
- * arrived or its local receive age exceeds maximum_age_ms. */
-bool Device_PeerLink_GetRemoteTelemetry(
+/* Copy the latest valid DBG sample while its local receive age is within the
+ * inclusive maximum. Stale or never-seen data returns false. */
+bool Device_PeerLink_GetRemoteDebugTelemetry(
     const Device_PeerLink *link,
     uint32_t now_ms,
     uint32_t maximum_age_ms,
-    Device_PeerLink_Telemetry *telemetry);
+    Device_PeerLink_DebugTelemetry *telemetry);
 
 #endif

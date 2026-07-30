@@ -32,11 +32,20 @@
 #define TEMPLATE_BRINGUP_MOTOR_COMMAND_LIMIT 8000
 
 /*
- * VOFA+ FireWater telemetry period in milliseconds. Each line has 21
- * channels (M0 14 + F407 7) in a 224-byte static buffer; normal bounded
+ * VOFA+ FireWater telemetry period in milliseconds. Each line has 22
+ * car/pendulum/raw-grayscale debug channels in a 192-byte static buffer; normal bounded
  * values at 20 ms (50 Hz) fit the 115200-baud budget and 1023-byte TX ring.
  */
 #define TEMPLATE_BRINGUP_TELEMETRY_PERIOD_MS UINT32_C(20)
+
+/* TFT checks one of four compact status rows per step. At 50 ms this scans
+ * the page in about 200 ms without coupling display work to 50 Hz telemetry. */
+#define TEMPLATE_BRINGUP_DISPLAY_STEP_PERIOD_MS UINT32_C(50)
+
+/* Moving-link JY61P is indication/calibration only. Its 0x53 Pitch is added
+ * to the chassis ICM45686 Pitch for local CH12 telemetry and never enters
+ * navigation or motor control. An older Euler sample is invalid. */
+#define TEMPLATE_BRINGUP_JY61P_ANGLE_TIMEOUT_MS UINT32_C(500)
 
 /* Start-key recognition; all values are milliseconds and must be nonzero. */
 #define TEMPLATE_BRINGUP_KEY_DEBOUNCE_MS UINT32_C(20)
@@ -52,17 +61,78 @@
 #define TEMPLATE_BRINGUP_ENCODER_B_DIRECTION (-1)
 
 /*
- * Xinliu T8 analog line-tracking product policy. The forward target is
+ * Yahboom UART analog line-tracking product policy. The forward target is
  * converted to the normalized Mode drive intention using the shared wheel
- * speed ceiling. A sample older than the freshness window cannot energize
- * either chassis motor.
+ * speed ceiling. A short sample gap is bridged by INS; prolonged loss requests
+ * the linear profile stop and cannot energize the chassis after it settles.
  */
-#define TEMPLATE_BRINGUP_LINE_BASE_SPEED_MM_PER_SECOND 250.0F
+#define TEMPLATE_BRINGUP_LINE_BASE_SPEED_MM_PER_SECOND 420.0F
+#define TEMPLATE_BRINGUP_LINE_CURVE_SPEED_MM_PER_SECOND 300.0F
+/* On the final D->A semicircle, reach each mode's finish-approach cap at the
+ * lower edge of the marker window. M2 uses 220 mm/s so its 180 mm marker
+ * runout exceeds the current profile braking envelope; other marker modes
+ * retain their conservative 100 mm/s cap. Steering differential is applied
+ * independently after this longitudinal profile. */
+#define TEMPLATE_BRINGUP_ITEM2_FINISH_APPROACH_SPEED_MM_PER_SECOND 220.0F
+#define TEMPLATE_BRINGUP_FINISH_APPROACH_SPEED_MM_PER_SECOND 100.0F
 #define TEMPLATE_BRINGUP_GRAYSCALE_TIMEOUT_MS UINT32_C(100)
 #define TEMPLATE_BRINGUP_LINE_OUTER_WEIGHT 0.70F
 #define TEMPLATE_BRINGUP_LINE_MIDDLE_WEIGHT 0.45F
 #define TEMPLATE_BRINGUP_LINE_INNER_WEIGHT 0.20F
 #define TEMPLATE_BRINGUP_LINE_STEERING_KP 0.70F
+/* M2 consumes the complete grayscale steering output. INS and absolute-yaw
+ * controllers do not contribute to its wheel targets. */
+#define TEMPLATE_BRINGUP_ITEM2_LINE_GUIDANCE_RATIO 1.0F
+/* M2 line-tracking wheel-speed half difference. */
+#define TEMPLATE_BRINGUP_ITEM2_MAXIMUM_HALF_DIFFERENCE_MM_PER_SECOND 230.0F
+
+/* Longitudinal motion profile.  Distances/speeds are mm and mm/s; the
+ * acceleration limits are mm/s^2.  Guard distance covers encoder quantizing,
+ * drivetrain delay and the physical stop offset and must be calibrated on the
+ * final chassis before scoring runs. */
+#define TEMPLATE_CAR_PROFILE_ACCELERATION_UP_MM_PER_SECOND2 180.0F
+#define TEMPLATE_CAR_PROFILE_ACCELERATION_DOWN_MM_PER_SECOND2 185.0F
+#define TEMPLATE_CAR_PROFILE_MAXIMUM_SPEED_MM_PER_SECOND 600.0F
+#define TEMPLATE_CAR_PROFILE_GUARD_DISTANCE_MM 35.0F
+#define TEMPLATE_CAR_PROFILE_PREVIEW_TIME_SECONDS 0.060F
+#define TEMPLATE_CAR_PROFILE_STOPPED_SPEED_THRESHOLD_MM_PER_SECOND 10.0F
+#define TEMPLATE_BRINGUP_GRAYSCALE_AUXILIARY_HOLD_MS UINT32_C(250)
+/* R500赛道的惯导前视。200 mm把切入直线/半圆的提前量限制在0.4R；
+ * 600 mm会在理想运动学仿真中产生约160 mm的一圈相位位置误差。 */
+#define TEMPLATE_BRINGUP_INS_LOOKAHEAD_MM 200.0F
+
+/* H题赛道：AB/CD 直道各 1.5 m，BC/DA 为半径 0.5 m 的半圆。启动点
+ * 默认为 A；M2 直接使用这一圈编码器累计距离作为停车目标，其他路线
+ * 模式按各自的终点策略使用。 */
+#define TEMPLATE_BRINGUP_H_STRAIGHT_LENGTH_MM 1500.0F
+#define TEMPLATE_BRINGUP_H_SEMICIRCLE_RADIUS_MM 500.0F
+#define TEMPLATE_BRINGUP_H_SEMICIRCLE_LENGTH_MM \
+    (3.14159265359F * TEMPLATE_BRINGUP_H_SEMICIRCLE_RADIUS_MM)
+#define TEMPLATE_BRINGUP_H_ONE_LAP_DISTANCE_MM \
+    ((2.0F * TEMPLATE_BRINGUP_H_STRAIGHT_LENGTH_MM) + \
+        (2.0F * TEMPLATE_BRINGUP_H_SEMICIRCLE_LENGTH_MM))
+/* User-confirmed full chassis length. Pass-through items keep this much
+ * route after B/A before their planned stop; it is not the finish-sensor
+ * offset below. */
+#define TEMPLATE_BRINGUP_CAR_LENGTH_MM 320.0F
+#define TEMPLATE_BRINGUP_ROUTE_GOAL_DISTANCE_MM \
+    TEMPLATE_BRINGUP_H_ONE_LAP_DISTANCE_MM
+
+/* Finish marker policy for the Yahboom raw analog stream. Inside the bounded
+ * end window, require both at least six channels >=900 and an eight-channel
+ * average >=1700 for two consecutive new frames. The common-mode threshold
+ * rejects ordinary narrow-line patterns observed in VOFA. */
+#define TEMPLATE_BRINGUP_FINISH_MARKER_WINDOW_CENTER_MM 5800.0F
+/* Retained physical M2 overshoot measurement. The current one-lap odometry
+ * stop does not apply this offset; use it only if a later calibration change
+ * is explicitly requested. */
+#define TEMPLATE_BRINGUP_M2_STOP_ADVANCE_MM 180.0F
+#define TEMPLATE_BRINGUP_FINISH_MARKER_STOP_RUNOUT_MM 0.0F
+#define TEMPLATE_BRINGUP_FINISH_MARKER_WINDOW_HALF_WIDTH_MM 300.0F
+#define TEMPLATE_BRINGUP_FINISH_MARKER_ADC_THRESHOLD UINT16_C(900)
+#define TEMPLATE_BRINGUP_FINISH_MARKER_ADC_AVERAGE_THRESHOLD UINT16_C(1700)
+#define TEMPLATE_BRINGUP_FINISH_MARKER_MINIMUM_CHANNELS 6U
+#define TEMPLATE_BRINGUP_FINISH_MARKER_CONFIRM_SAMPLES 2U
 
 /* RGB indicator brightness 0..255; kept low to limit LED current. */
 #define TEMPLATE_BRINGUP_RGB_BRIGHTNESS 32U
@@ -75,11 +145,8 @@
 #define TEMPLATE_PEER_LINK_HEARTBEAT_PERIOD_MS UINT32_C(500)
 #define TEMPLATE_PEER_LINK_OFFLINE_TIMEOUT_MS UINT32_C(1500)
 #define TEMPLATE_PEER_LINK_RX_BYTES_PER_STEP 128U
-/* F407 TEL freshness window used by the merged Bluetooth VOFA output. */
-#define TEMPLATE_PEER_LINK_TELEMETRY_TIMEOUT_MS UINT32_C(200)
-/* ENC uses the same 200 ms display freshness contract as TEL. */
-#define TEMPLATE_PEER_LINK_ENCODER_TIMEOUT_MS \
-    TEMPLATE_PEER_LINK_TELEMETRY_TIMEOUT_MS
+/* G3519 submits one latest chassis state to F407 at 100 Hz. */
+#define TEMPLATE_PEER_LINK_CAR_STATE_PERIOD_MS UINT32_C(10)
 
 /* ==================== 车辆控制 ==================== */
 
@@ -150,8 +217,8 @@
 #define TEMPLATE_CAR_SPEED_LOW_KP 0.25F
 #define TEMPLATE_CAR_SPEED_LOW_KI 0.30F
 #define TEMPLATE_CAR_SPEED_LOW_KD 0.0005F
-#define TEMPLATE_CAR_SPEED_HIGH_KP 0.20F
-#define TEMPLATE_CAR_SPEED_HIGH_KI 0.20F
+#define TEMPLATE_CAR_SPEED_HIGH_KP 0.26F
+#define TEMPLATE_CAR_SPEED_HIGH_KI 0.30F
 #define TEMPLATE_CAR_SPEED_HIGH_KD 0.0005F
 #define TEMPLATE_CAR_SPEED_HIGH_THRESHOLD_MM_PER_SECOND 300.0F
 #define TEMPLATE_CAR_SPEED_ERROR_DEADBAND_MM_PER_SECOND 2.0F
@@ -177,13 +244,15 @@
 #define TEMPLATE_CAR_ANGLE_RATE_TOLERANCE_DPS 3.0F
 
 /*
- * Fused differential-drive navigation geometry and complementary correction.
- * Track width is a calibrated contact-patch distance in mm. Correction and
- * slip-gate thresholds affect only the reusable local navigation default.
+ * Differential-drive navigation geometry. Track width is still required by
+ * the yaw-rate-to-wheel-speed feedforward and encoder diagnostics. The 26H
+ * product uses the calibrated ICM gyro as its only heading source; encoder
+ * average distance remains the longitudinal odometer.
  */
-#define TEMPLATE_CAR_NAV_TRACK_WIDTH_MM 120.0F
+/* User-confirmed two-wheel spacing: 20 cm. */
+#define TEMPLATE_CAR_NAV_TRACK_WIDTH_MM 200.0F
 #define TEMPLATE_CAR_NAV_HEADING_CORRECTION_TIME_CONSTANT_SECONDS 2.0F
-#define TEMPLATE_CAR_NAV_ENCODER_HEADING_CORRECTION_ENABLED true
+#define TEMPLATE_CAR_NAV_ENCODER_HEADING_CORRECTION_ENABLED false
 #define TEMPLATE_CAR_NAV_SLIP_GATE_ENABLED false
 #define TEMPLATE_CAR_NAV_SLIP_GATE_ENTER_THRESHOLD_DPS 25.0F
 #define TEMPLATE_CAR_NAV_SLIP_GATE_EXIT_THRESHOLD_DPS 12.0F

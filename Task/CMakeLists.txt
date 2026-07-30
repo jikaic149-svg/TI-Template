@@ -20,6 +20,7 @@ if(TEMPLATE_ENABLE_TASK_BRINGUP_CHASSIS)
     target_link_libraries(task_app PRIVATE
         device_encoder
         device_icm45686
+        device_jy61p
         device_key
         device_key_input
         device_line_tracking
@@ -28,7 +29,7 @@ if(TEMPLATE_ENABLE_TASK_BRINGUP_CHASSIS)
         device_rgb
         device_serial
         device_st7735s
-        device_xinliu_t8
+        device_yahboom_track
         mode_car
         mode_communicate)
 endif()

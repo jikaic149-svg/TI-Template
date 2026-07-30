@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDirectory,
-    [ValidateSet("All", "Watchdog", "Communication", "IMU", "Motor", "Display", "Navigation", "LineTracking")]
+[ValidateSet("All", "Watchdog", "Communication", "IMU", "Motor", "Display", "Navigation", "LineTracking", "SpeedProfile")]
     [string[]]$Scope = @("All")
 )
 
@@ -79,6 +79,13 @@ if (Test-ScopeEnabled -Name "Watchdog") {
 }
 
 if (Test-ScopeEnabled -Name "IMU") {
+    Invoke-HostTest -Name "jy61p" -Includes @(
+        "Device\Sensor\IMU\JY61P"
+    ) -Sources @(
+        "Device\Sensor\IMU\JY61P\device_jy61p.c",
+        "tests\jy61p\test_device_jy61p.c"
+    )
+
     Invoke-HostTest -Name "algorithm_imu_fusion" -Includes @(
         "config",
         "APP\Algorithm\IMUFusion\include",
@@ -191,6 +198,18 @@ if (Test-ScopeEnabled -Name "Navigation") {
     )
 }
 
+if (Test-ScopeEnabled -Name "SpeedProfile") {
+    Invoke-HostTest -Name "speed_profile" -Includes @(
+        "config",
+        "APP\Algorithm\PID\include",
+        "Mode\Car\include"
+    ) -Sources @(
+        "APP\Algorithm\PID\src\algorithm_pid.c",
+        "Mode\Car\Control\mode_car_speed_profile.c",
+        "tests\speed_profile\test_mode_car_speed_profile.c"
+    )
+}
+
 if (Test-ScopeEnabled -Name "LineTracking") {
     Invoke-HostTest -Name "line_tracking_uart" -Includes @(
         "config",
@@ -199,6 +218,7 @@ if (Test-ScopeEnabled -Name "LineTracking") {
         "BSP",
         "Device\Sensor\LineTracking",
         "Device\Sensor\LineTracking\XinliuT8",
+        "Device\Sensor\LineTracking\YahboomTrack",
         "Device\Sensor\LineTracking\Ganwei",
         "Mode\Car\include",
         "Mode\Car\src"
@@ -207,6 +227,7 @@ if (Test-ScopeEnabled -Name "LineTracking") {
         "APP\Algorithm\PID\src\algorithm_pid.c",
         "Device\Sensor\LineTracking\device_line_tracking.c",
         "Device\Sensor\LineTracking\XinliuT8\device_xinliu_t8.c",
+        "Device\Sensor\LineTracking\YahboomTrack\device_yahboom_track.c",
         "Device\Sensor\LineTracking\Ganwei\device_ganwei.c",
         "Mode\Car\src\mode_car_common.c",
         "Mode\Car\Tracking\mode_car_tracking.c",
