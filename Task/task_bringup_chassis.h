@@ -20,11 +20,12 @@
  * stationary ball test. Items 5
  * and 6 likewise pass A before their one-car-length planned stop. A short press while moving
  * requests a planned stop; a long press while moving cannot switch items.
- * The default H-title route uses 420 mm/s on the two
- * 1.5 m straight sections and 300 mm/s on the two semicircles; both values
+ * The default H-title route uses 500 mm/s on the two
+ * 1.5 m straight sections and 380 mm/s on the two semicircles; both values
  * are configuration-only starting points and must be calibrated on the final
  * chassis. On M2, the final marker approach reaches 220 mm/s while retaining
- * the complete grayscale steering differential. The marker requires at least six raw channels >=900 and an
+ * the grayscale steering differential; after marker confirmation, a bounded
+ * launch-yaw correction is added during braking. The marker requires at least six raw channels >=900 and an
  * eight-channel average >=1700 for two consecutive new frames after a normal
  * frame inside the 5800 +/-300 mm search window.
  * The profile ramps acceleration and deceleration linearly, uses the

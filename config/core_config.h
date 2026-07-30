@@ -66,8 +66,8 @@
  * speed ceiling. A short sample gap is bridged by INS; prolonged loss requests
  * the linear profile stop and cannot energize the chassis after it settles.
  */
-#define TEMPLATE_BRINGUP_LINE_BASE_SPEED_MM_PER_SECOND 420.0F
-#define TEMPLATE_BRINGUP_LINE_CURVE_SPEED_MM_PER_SECOND 300.0F
+#define TEMPLATE_BRINGUP_LINE_BASE_SPEED_MM_PER_SECOND 500.0F
+#define TEMPLATE_BRINGUP_LINE_CURVE_SPEED_MM_PER_SECOND 380.0F
 /* On the final D->A semicircle, reach each mode's finish-approach cap at the
  * lower edge of the marker window. M2 uses 220 mm/s so its 180 mm marker
  * runout exceeds the current profile braking envelope; other marker modes
@@ -79,9 +79,10 @@
 #define TEMPLATE_BRINGUP_LINE_OUTER_WEIGHT 0.70F
 #define TEMPLATE_BRINGUP_LINE_MIDDLE_WEIGHT 0.45F
 #define TEMPLATE_BRINGUP_LINE_INNER_WEIGHT 0.20F
-#define TEMPLATE_BRINGUP_LINE_STEERING_KP 0.70F
-/* M2 consumes the complete grayscale steering output. INS and absolute-yaw
- * controllers do not contribute to its wheel targets. */
+#define TEMPLATE_BRINGUP_LINE_STEERING_KP 0.65F
+/* M2 consumes the complete grayscale steering output. After the finish marker
+ * is confirmed, the launch-yaw angle PID is added only during planned braking
+ * so the chassis approaches its original heading while it stops. */
 #define TEMPLATE_BRINGUP_ITEM2_LINE_GUIDANCE_RATIO 1.0F
 /* M2 line-tracking wheel-speed half difference. */
 #define TEMPLATE_BRINGUP_ITEM2_MAXIMUM_HALF_DIFFERENCE_MM_PER_SECOND 230.0F

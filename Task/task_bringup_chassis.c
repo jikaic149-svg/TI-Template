@@ -701,9 +701,17 @@ static void bringup_set_planned_targets(
             fminf(
                 TEMPLATE_BRINGUP_ITEM2_MAXIMUM_HALF_DIFFERENCE_MM_PER_SECOND,
                 raw_half_difference));
+        const float maximum_mean_target =
+            TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND -
+                fabsf(half_difference);
+        const float bounded_mean_target = fmaxf(
+            -maximum_mean_target,
+            fminf(maximum_mean_target, mean_target));
 
-        left_target = mean_target - half_difference;
-        right_target = mean_target + half_difference;
+        /* Preserve the requested steering differential under the per-wheel
+         * clamp. If necessary, reduce only the common longitudinal target. */
+        left_target = bounded_mean_target - half_difference;
+        right_target = bounded_mean_target + half_difference;
     }
     g_target_left_speed = fmaxf(-TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND,
         fminf(TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND,
@@ -1646,6 +1654,7 @@ static void bringup_update_tracking(
     /* Item 4 holds the launch yaw with the dedicated angle PID. Grayscale and
      * route-lookahead corrections remain observable but cannot steer M4. */
     if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_2) {
+        Mode_Car_AngleControllerOutput finish_heading_output = {0};
         const float line_left_guidance =
             (grayscale_fresh && g_line_sample_available &&
                 g_line_sample.line_present &&
@@ -1659,11 +1668,27 @@ static void bringup_update_tracking(
             g_line_right_speed_correction *
                 TEMPLATE_BRINGUP_ITEM2_LINE_GUIDANCE_RATIO : 0.0F;
 
+        if (g_finish_marker_latched && imu_navigation_valid &&
+            (imu_snapshot != NULL)) {
+            if (!Mode_Car_AngleController_Update(
+                    &g_angle_controller,
+                    &(Mode_Car_AngleControllerInput){
+                        .dt_seconds = dt_seconds,
+                        .target_yaw_deg = g_navigation_start_yaw_deg,
+                        .measured_yaw_deg = imu_snapshot->yaw_deg,
+                        .measured_yaw_rate_deg_per_second =
+                            imu_snapshot->yaw_rate_dps,
+                    }, &finish_heading_output)) {
+                g_BRINGUP_Fault = 9U;
+                bringup_stop_motors();
+                return;
+            }
+        }
         bringup_set_planned_targets(
             profile_output.reference_speed_mm_per_second,
             measured_speed,
-            line_left_guidance,
-            line_right_guidance,
+            line_left_guidance + finish_heading_output.target_left_speed,
+            line_right_guidance + finish_heading_output.target_right_speed,
             false);
     } else if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) {
         Mode_Car_AngleControllerOutput angle_output = {0};
