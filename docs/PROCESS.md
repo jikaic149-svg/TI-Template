@@ -1838,3 +1838,145 @@
   `reset run`。
 - 已知限制与待确认：18 s为基于上一版分段耗时的调参目标，不能由源码静态保证；须用新
   VOFA核对总时长、横杠后CH3/CH4差速、最终相对发车yaw及高速下是否仍有循迹抖动。
+
+## 2026-07-30：M4 A→B采用专用平滑加减速规划
+
+- 修改原因：任务4要求小车在8 s内通过1500 mm处的B点；用户要求起步及全程速度尽量
+  平缓，不允许目标速度突变，并准确限制纵向加速度。
+- 最终决策：M4沿AB只用发车yaw角度PID保持直行，不叠加灰度或路径前视转向。纵向采用
+  现有线性梯形规划器，巡航速度上限为`320 mm/s`，加速和减速均限制为
+  `120 mm/s²`；10 ms完整控制周期内目标速度仅变化`1.2 mm/s`。停车目标设为B后
+  `50 mm`，扣除共享`35 mm`规划保护距离后理论停点约在B后15 mm，确保通过B；理想
+  运动学约6.9 s通过B。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、
+  `Task/task_bringup_chassis.h`、`Task/README.md`、`docs/DEVICE_PARAMETERS.md`和本记录；
+  未修改公共API、Task周期、BSP、SysConfig、引脚、通信或M2行为。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构检查、差异检查及
+  映射到的G3519 Bring-up Debug/Release完整链接；Debug/Release的FLASH为
+  `82808/78568 B`，SRAM_BANK0为`19256/19240 B`。现有线性规划器host测试覆盖线性起步、
+  加速度输出、巡航目标切换连续性及目标制动停车。用户授权后，显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug `82808 B`；
+  从主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `D25146F297871237DFD2D1793F9F94D6F955A141AF35D955A3E1542DE5E9CE6A`，随后执行
+  `reset run`。
+- 已知限制与待确认：6.9 s是理想运动学估算；烧录和完整回读不等于实车控制验证，实车
+  通过B的时间、VOFA速度斜率、轮速跟随误差和最终停点仍待确认。
+
+## 2026-07-30：M5/M6采用30 s整圈平滑纯灰度循迹
+
+- 修改原因：题面第4项只要求8 s内通过B，第5/6项要求30 s内循迹一圈并通过A；用户要求
+  在完成M4的AB加速度规划时一并落实后续30 s循迹，并继续遵守限时内尽量慢、起步平滑、
+  目标速度不突变的原则。
+- 最终决策：M4行为不变。M5/M6只使用亚博八路灰度输出转向，INS路径前视仍更新供观察但
+  不叠加到轮速。两模式全圈采用恒定`250 mm/s`纵向上限，避免在AB/BC/CD/DA切点切换
+  速度；加速和减速均限制为`120 mm/s²`，10 ms完整控制周期内纵向参考速度最多变化
+  `1.2 mm/s`。理想运动学约25.6 s通过一圈后的A，保留约4.4 s题面余量；通过A后仍按
+  既有320 mm目标规划停车。含35 mm保护距离的250 mm/s制动包络约295.4 mm，小于
+  A后320 mm余量。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、
+  `Task/task_bringup_chassis.h`、`Task/README.md`、`docs/DEVICE_PARAMETERS.md`和本记录；
+  未修改公共API、Task周期、BSP、SysConfig、引脚、通信、M2或M4行为。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构检查、差异检查及
+  映射到的固件完整链接；G3519 Bring-up Debug/Release的FLASH为`82840/78584 B`，
+  SRAM_BANK0为`19256/19240 B`。显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug `82840 B`；
+  从主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `B3C1C512655E69F98EEE3D6E3A4AC806AFAF79057188B474FC1876B30E27E545`，随后执行
+  `reset run`。
+- 已知限制与待确认：25.6 s和295.4 mm均为理想规划值，不含实车轮速跟随误差、循迹
+  差速和打滑；烧录和完整回读不等于实车控制验证，M5/M6的实车整圈时间、灰度循迹
+  稳定性、球位误差及A后停车过程仍需VOFA和场地测试确认。
+
+## 2026-07-30：按VOFA修正M5/M6画龙、圆弧差速和A点停车
+
+- 修改原因：最新两次M5/M6实测分别在25.38/25.44 s、里程5682/5661 mm确认终点横杠，
+  最终只继续280/283 mm并在5962/5944 mm停车。CD直道左右目标全差平均绝对值达到
+  110～163 mm/s、范围约`-423～+313 mm/s`，20 ms内全差最大跳变294 mm/s；第一/第二
+  半圆目标全差均值约`-95/-111 mm/s`，实测仅`-77/-85 mm/s`，按200 mm轮距折算有效
+  半径约619/561 mm。横杠确认时相对发车yaw约`-340°`，最终约`-358～-360°`，与前置
+  230 mm探头提前看到A点一致，不是横杠误识别或最终航向未回正。
+- 最终决策：仅M5/M6巡航速度由250降至`234 mm/s`，加减速度仍为`120 mm/s²`，理想
+  整圈约27.2 s。两模式循迹Kd由0.03降至`0.01`；灰度修正重构为保持均速的左右半差，
+  限制为`±70 mm/s`并按`300 mm/s²`斜率变化，即10 ms每轮修正最多变化3 mm/s、左右
+  全差最多变化6 mm/s。横杠确认后的目标余量由320改为`265 mm`：234 mm/s制动距离约
+  228.2 mm，加35 mm保护包络约263.2 mm，计划先前进约1.8 mm再制动，使轮轴累计前进
+  约230 mm至A点；漏检兜底仍为一圈加320 mm。成绩时间改为横杠里程加230 mm时锁存，
+  不再把前置探头看到横杠的时刻当作轮轴通过A。M2/M4行为不变。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、
+  `Task/task_bringup_chassis.h`、`Task/README.md`、`docs/DEVICE_PARAMETERS.md`和本记录；
+  未修改公共API、Task周期、BSP、SysConfig、引脚或通信。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构检查及映射到的固件
+  完整链接；G3519 Bring-up Debug/Release的FLASH为`83160/78856 B`，SRAM_BANK0为
+  `19256/19248 B`。显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug `83160 B`；
+  从主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `F3C1B524F2A5579F5953731490AF19C1DE8E8D75A64593C2F3603E1CA35426DF`，随后执行
+  `reset run`。
+- 已知限制与待确认：差速跟随率和停车位置来自两次实测的首轮闭环，差速斜率限制可能使
+  半圆入口建立转向偏慢；须用新VOFA确认CH3/CH4全差斜率、半圆CH1/CH2实际差速、横杠后
+  实走距离、轮轴相对A位置和最终显示时间均不超过30 s，再决定是否放宽300 mm/s²斜率。
+
+## 2026-07-31：撤销M5/M6过慢差速斜率
+
+- 修改原因：用户实车确认300 mm/s²半差斜率版本画龙更严重；当前`vofa+.csv`仍停留在
+  2026-07-30 23:47，未包含该次试跑。按R500所需约47 mm/s半差计算，300 mm/s²需要
+  约157 ms建立转向，234 mm/s下车辆已前进约37 mm，新增相位滞后与实车现象一致。
+- 最终决策：M5/M6循迹Kd恢复为`0.03`，半差斜率由300提高到`3000 mm/s²`，使47 mm/s
+  半差约16 ms建立；半差`±70 mm/s`上限、234 mm/s巡航、120 mm/s²纵向加减速、230 mm
+  探头偏置和265 mm标记后目标均不变。M2/M4不变。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.h`、`Task/README.md`、
+  `docs/DEVICE_PARAMETERS.md`和本记录；未修改公共API、Task周期、BSP、SysConfig、引脚或
+  通信。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构检查及映射到的固件
+  完整链接；G3519 Bring-up Debug/Release的FLASH为`83160/78856 B`，SRAM_BANK0为
+  `19256/19248 B`。首次烧录尝试因DAPLink未连接而未发生目标写入；重新连接后显式选择
+  DAPLink序列号`000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug
+  `83160 B`。从主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `2E5CB039528FAF39B3064C277E84F9EF98421F29A5F73277C3D82E3148CA1EEA`，随后执行
+  `reset run`。
+- 已知限制与待确认：烧录和完整回读不等于实车控制验证；须用新VOFA比较直道全差绝对
+  均值、半圆差速建立时间、实际半径和画龙幅度。
+
+## 2026-07-31：依据VOFA提前降低M5/M6终点速度
+
+- 修改原因：最新两次有效运行均在约`5716/5728 mm`确认终点横杠，确认时CH5仍为
+  `232/233 mm/s`，参考速度归零里程约`5993/6001 mm`。扣除230 mm探头偏置后，轮轴约
+  多越过A点`52/46 mm`；按确认速度和实际推进距离折算，实车有效减速度约
+  `97～100 mm/s²`，低于旧规划值`120 mm/s²`。横杠识别和循迹正常，晚停来自终点速度与
+  实车制动能力不匹配。
+- 最终决策：仅M5/M6保持前段`234 mm/s`和原灰度循迹参数，在终点横杠窗口下沿前以
+  `100 mm/s²`线性降至`210 mm/s`。横杠后的265 mm目标不变：210 mm/s按100 mm/s²的
+  制动距离为220.5 mm，加35 mm规划保护后触发距离为255.5 mm，因此横杠后约9.5 mm开始
+  制动，规划轮轴推进量为230 mm。M2/M4、循迹Kp/Kd、半差上限和差速斜率均未改变。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、`Task/README.md`和本记录；
+  未修改公共API、Task周期、BSP、SysConfig、引脚或通信。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构检查、差异检查和映射
+  到的完整链接；G3519 Bring-up Debug/Release的FLASH为`83192/78872 B`，SRAM_BANK0为
+  `19256/19248 B`。通用烧录脚本最初误选基础G3519 Debug镜像，发现镜像长度异常后立即
+  使用显式DAPLink序列号`000100011a5a5bb60000000000045c0aa5a5a5a597969908`覆盖写入正确
+  Bring-up Debug `83192 B`；从主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `6500D73C09FA34AED462F7D05AAA09F54C9AA4E9FD711A09B33501EDE851B549`，随后执行`reset run`。
+- 已知限制与待确认：烧录和回读只证明正确镜像已部署；210 mm/s与100 mm/s²来自最近两次
+  VOFA的离线标定，仍须用下一次实车VOFA确认横杠处CH5、最终里程及相对A点的有符号偏差。
+
+## 2026-07-31：M5/M6终点接近速度降至110 mm/s
+
+- 修改原因：210 mm/s版本的最新三次VOFA均正确执行新参数，但横杠后仍运行
+  `275～277 mm`才停，轮轴相对230 mm探头偏置继续晚`45～47 mm`。到达横杠后约230 mm
+  的A点时，CH5参考速度仍为`73～74 mm/s`，左右轮实测均速仍为`99～108 mm/s`；横杠
+  识别和循迹差速正常，210 mm/s方案被实测否决。
+- 最终决策：仅将M5/M6终点窗口下沿的接近速度从`210`降至`110 mm/s`，前段巡航
+  `234 mm/s`、末段减速度`100 mm/s²`、横杠后目标265 mm、循迹Kp/Kd、半差上限和斜率
+  全部保持不变。按当前VOFA的速度跟随误差估算，最终晚停约15 mm，总时间约29.5 s。
+- 涉及文件：`config/core_config.h`、`Task/README.md`和本记录；未修改公共API、Task周期、
+  BSP、SysConfig、引脚、通信、M2或M4行为。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构检查、差异检查和
+  映射到的完整链接；G3519 Bring-up Debug/Release的FLASH为`83192/78872 B`，
+  SRAM_BANK0为`19256/19248 B`。当前Bring-up Debug BIN的SHA-256为
+  `573FF1B7D7845FB6352938231FD3EF819BDE4B1E37E0071E3FC98BE3F3A7AE84`。
+- 部署与待确认：用户随后明确要求烧录；使用显式DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug `83192 B`。
+  从主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `573FF1B7D7845FB6352938231FD3EF819BDE4B1E37E0071E3FC98BE3F3A7AE84`，随后执行
+  `reset run`。110 mm/s的停车偏差和约29.5 s总时间仍为离线估算，须用新VOFA和实际A点
+  位置确认。

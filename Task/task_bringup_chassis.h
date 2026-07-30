@@ -14,16 +14,20 @@
  * A prolonged missing line
  * requests the same planned stop. The M2 wheel-speed half difference and each
  * final wheel target remain bounded. Item 4
- * is an isolated A-to-B yaw-hold test: the
- * angle PID holds the launch ICM yaw around the longitudinal profile and
- * stops at 1500 mm without grayscale or route-lookahead steering. Item 3 keeps the chassis locked for the
- * stationary ball test. Items 5
- * and 6 likewise pass A before their one-car-length planned stop. A short press while moving
+ * is an A-to-B yaw-hold test: the angle PID holds the launch ICM yaw around a
+ * 120 mm/s^2 acceleration/deceleration profile capped at 320 mm/s. Its goal
+ * is 50 mm beyond B so the scoring point is crossed without grayscale or
+ * route-lookahead steering. Item 3 keeps the chassis locked for the
+ * stationary ball test. Items 5 and 6 use pure infrared grayscale steering
+ * around a constant 234 mm/s longitudinal cap with 120 mm/s^2 ramps. Their
+ * ideal one-lap pass time is about 27.2 s. A 70 mm/s half-difference bound and
+ * 3000 mm/s^2 slew keep grayscale wheel targets continuous without delaying
+ * curve entry; after the front
+ * sensor sees A, its measured 230 mm offset defines the planned stop. A short press while moving
  * requests a planned stop; a long press while moving cannot switch items.
- * The default H-title route uses 500 mm/s on the two
- * 1.5 m straight sections and 380 mm/s on the two semicircles; both values
- * are configuration-only starting points and must be calibrated on the final
- * chassis. On M2, the final marker approach reaches 220 mm/s while retaining
+ * M2 uses 500 mm/s on the two 1.5 m straight sections and 380 mm/s on the two
+ * semicircles; both values are configuration-only starting points and must be
+ * calibrated on the final chassis. On M2, the final marker approach reaches 220 mm/s while retaining
  * the grayscale steering differential; after marker confirmation, a bounded
  * launch-yaw correction is added during braking. The marker requires at least six raw channels >=900 and an
  * eight-channel average >=1700 for two consecutive new frames after a normal

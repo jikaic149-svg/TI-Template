@@ -442,9 +442,9 @@ static void consume_debug_telemetry(
             &packet->payload[start[9]], length[9], &phase) ||
         !parse_u32_canonical(
             &packet->payload[start[10]], length[10], &flags) ||
-        !absolute_i32_within(acceleration, INT32_C(50000)) ||
-        !absolute_i32_within(compensation, INT32_C(10000)) ||
-        !absolute_i32_within(rod_command, INT32_C(10000)) ||
+        !absolute_i32_within(acceleration, INT32_C(60000)) ||
+        !absolute_i32_within(compensation, INT32_C(60000)) ||
+        !absolute_i32_within(rod_command, INT32_C(60000)) ||
         (target_raw > UINT16_MAX) || (feedback_raw > UINT16_MAX) ||
         !absolute_i32_within(command_current, INT32_C(2000)) ||
         !absolute_i32_within(feedback_current, INT32_C(10000)) ||

@@ -215,6 +215,7 @@ static float g_target_right_speed = 0.0F;
 static float g_line_left_speed_correction = 0.0F;
 static float g_line_right_speed_correction = 0.0F;
 static bool g_line_speed_correction_valid = false;
+static float g_item56_line_half_difference_mm_per_second = 0.0F;
 static uint32_t g_tracking_started_ms = 0U;
 static uint32_t g_inspection_elapsed_ms = 0U;
 static uint32_t g_score_elapsed_ms = 0U;
@@ -235,6 +236,10 @@ static Mode_Car_AnalogTrackingConfig bringup_tracking_config(void)
         Mode_Car_AnalogTracking_DefaultConfig();
 
     config.steering.kp = TEMPLATE_BRINGUP_LINE_STEERING_KP;
+    if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+        (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) {
+        config.steering.kd = TEMPLATE_BRINGUP_ITEM56_LINE_STEERING_KD;
+    }
     return config;
 }
 
@@ -246,6 +251,40 @@ static Mode_Car_SpeedControllerConfig bringup_speed_controller_config(void)
     /* The outer profile is the only target slew limiter. */
     config.target_smoothing_time_constant_seconds = 0.0F;
     return config;
+}
+
+static Mode_Car_LinearProfileConfig bringup_linear_profile_config(void)
+{
+    Mode_Car_LinearProfileConfig config =
+        Mode_Car_LinearProfile_DefaultConfig();
+
+    config.maximum_speed_mm_per_second =
+        TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND;
+    if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) {
+        config.acceleration_up_mm_per_second2 =
+            TEMPLATE_BRINGUP_ITEM4_AB_ACCELERATION_MM_PER_SECOND2;
+        config.acceleration_down_mm_per_second2 =
+            TEMPLATE_BRINGUP_ITEM4_AB_DECELERATION_MM_PER_SECOND2;
+    } else if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+        (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) {
+        config.acceleration_up_mm_per_second2 =
+            TEMPLATE_BRINGUP_ITEM56_LAP_ACCELERATION_MM_PER_SECOND2;
+        config.acceleration_down_mm_per_second2 =
+            TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2;
+    }
+    return config;
+}
+
+static float bringup_launch_cruise_speed_mm_per_second(void)
+{
+    if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) {
+        return TEMPLATE_BRINGUP_ITEM4_AB_CRUISE_SPEED_MM_PER_SECOND;
+    }
+    if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+        (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) {
+        return TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND;
+    }
+    return TEMPLATE_BRINGUP_LINE_BASE_SPEED_MM_PER_SECOND;
 }
 
 static Mode_Car_FusedNavigationConfig bringup_navigation_config(void)
@@ -274,7 +313,8 @@ static Bringup_CompetitionMode bringup_next_competition_mode(
 static float bringup_competition_goal_distance_mm(void)
 {
     if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) {
-        return TEMPLATE_BRINGUP_H_STRAIGHT_LENGTH_MM;
+        return TEMPLATE_BRINGUP_H_STRAIGHT_LENGTH_MM +
+            TEMPLATE_BRINGUP_ITEM4_PASS_B_RUNOUT_MM;
     }
     if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_2) {
         /* M2 completion is based only on one lap of mean wheel odometry. */
@@ -293,7 +333,8 @@ static float bringup_competition_goal_distance_mm(void)
 static float bringup_route_terminal_distance_mm(void)
 {
     if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) {
-        return TEMPLATE_BRINGUP_H_STRAIGHT_LENGTH_MM;
+        return TEMPLATE_BRINGUP_H_STRAIGHT_LENGTH_MM +
+            TEMPLATE_BRINGUP_ITEM4_PASS_B_RUNOUT_MM;
     }
     if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_2) {
         return TEMPLATE_BRINGUP_ROUTE_GOAL_DISTANCE_MM +
@@ -321,6 +362,33 @@ static float bringup_mean_speed(
 {
     return 0.5F * (speed_a->speed_distance_per_second +
         speed_b->speed_distance_per_second);
+}
+
+static float bringup_item56_slew_line_half_difference(
+    float desired_half_difference_mm_per_second,
+    float dt_seconds)
+{
+    const float maximum_half_difference =
+        TEMPLATE_BRINGUP_ITEM56_MAXIMUM_HALF_DIFFERENCE_MM_PER_SECOND;
+    float maximum_change;
+    float desired;
+    float change;
+
+    if (!isfinite(desired_half_difference_mm_per_second) ||
+        !isfinite(dt_seconds) || (dt_seconds <= 0.0F)) {
+        return g_item56_line_half_difference_mm_per_second;
+    }
+    desired = fmaxf(-maximum_half_difference,
+        fminf(maximum_half_difference,
+            desired_half_difference_mm_per_second));
+    maximum_change =
+        TEMPLATE_BRINGUP_ITEM56_HALF_DIFFERENCE_SLEW_MM_PER_SECOND2 *
+            dt_seconds;
+    change = fmaxf(-maximum_change,
+        fminf(maximum_change,
+            desired - g_item56_line_half_difference_mm_per_second));
+    g_item56_line_half_difference_mm_per_second += change;
+    return g_item56_line_half_difference_mm_per_second;
 }
 
 static bool bringup_scale_i32(
@@ -421,7 +489,7 @@ static bool bringup_update_finish_marker(
         BRINGUP_ITEM2_AFTER_MARKER_DISTANCE_MM :
         (((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
             (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) ?
-        TEMPLATE_BRINGUP_CAR_LENGTH_MM :
+        TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM :
         TEMPLATE_BRINGUP_FINISH_MARKER_STOP_RUNOUT_MM);
 
     if (g_finish_marker_latched) {
@@ -512,12 +580,28 @@ static float bringup_route_cruise_speed(float distance_from_start_mm)
         (distance_from_start_mm < 0.0F) || (lap_mm <= 0.0F)) {
         return straight_speed;
     }
-    if ((distance_from_start_mm >= lap_mm) &&
-        ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
-            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6))) {
-        /* Pass A at the established finish-approach cap, then retain the
-         * same cap through the one-car-length runout before stopping. */
-        return finish_approach_speed;
+    if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) {
+        return TEMPLATE_BRINGUP_ITEM4_AB_CRUISE_SPEED_MM_PER_SECOND;
+    }
+    if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+        (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) {
+        const float item56_approach_speed =
+            TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND;
+        const float item56_transition_distance_mm =
+            ((TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND *
+                TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND) -
+                (item56_approach_speed * item56_approach_speed)) /
+            (2.0F *
+                TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2);
+        const float item56_approach_start_mm =
+            finish_window_lower_mm - item56_transition_distance_mm;
+
+        /* Keep the full-lap cap through all tangent points, then use the
+         * VOFA-calibrated final approach so the axle can stop at A. */
+        if (distance_from_start_mm >= item56_approach_start_mm) {
+            return item56_approach_speed;
+        }
+        return TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND;
     }
     phase_mm = fmodf(distance_from_start_mm, lap_mm);
     if (phase_mm < straight_mm) {
@@ -1210,11 +1294,9 @@ static bool bringup_init_devices(void)
         }
     }
     {
-    Mode_Car_LinearProfileConfig profile_config =
-            Mode_Car_LinearProfile_DefaultConfig();
+        const Mode_Car_LinearProfileConfig profile_config =
+            bringup_linear_profile_config();
 
-        profile_config.maximum_speed_mm_per_second =
-            TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND;
         if (!Mode_Car_LinearSpeedProfile_Init(
                 &g_speed_profile, &profile_config)) {
             g_BRINGUP_Fault = 11U;
@@ -1244,6 +1326,36 @@ static bool bringup_init_devices(void)
             (TEMPLATE_BRINGUP_FINISH_APPROACH_SPEED_MM_PER_SECOND <= 0.0F) ||
             (TEMPLATE_BRINGUP_FINISH_APPROACH_SPEED_MM_PER_SECOND >
                 TEMPLATE_BRINGUP_LINE_CURVE_SPEED_MM_PER_SECOND) ||
+            (TEMPLATE_BRINGUP_ITEM4_AB_CRUISE_SPEED_MM_PER_SECOND <= 0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM4_AB_CRUISE_SPEED_MM_PER_SECOND >
+                TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND) ||
+            (TEMPLATE_BRINGUP_ITEM4_AB_ACCELERATION_MM_PER_SECOND2 <= 0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM4_AB_DECELERATION_MM_PER_SECOND2 <= 0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM4_PASS_B_RUNOUT_MM <=
+                TEMPLATE_CAR_PROFILE_GUARD_DISTANCE_MM) ||
+            (TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND <= 0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND >
+                TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND) ||
+            (TEMPLATE_BRINGUP_ITEM56_LAP_ACCELERATION_MM_PER_SECOND2 <= 0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2 <= 0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND <=
+                0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND >
+                TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND) ||
+            (TEMPLATE_BRINGUP_ITEM56_LINE_SENSOR_OFFSET_MM <= 0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM <=
+                TEMPLATE_BRINGUP_ITEM56_LINE_SENSOR_OFFSET_MM) ||
+            (TEMPLATE_BRINGUP_ITEM56_LINE_STEERING_KD < 0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM56_MAXIMUM_HALF_DIFFERENCE_MM_PER_SECOND <=
+                0.0F) ||
+            (TEMPLATE_BRINGUP_ITEM56_HALF_DIFFERENCE_SLEW_MM_PER_SECOND2 <=
+                0.0F) ||
+            ((TEMPLATE_CAR_PROFILE_GUARD_DISTANCE_MM +
+                ((TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND *
+                    TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND) /
+                    (2.0F *
+                        TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2))) >=
+                TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM) ||
             !Mode_Car_AnalogTracking_Init(
                 &g_tracking_controller, &tracking_config)) {
             g_BRINGUP_Fault = 10U;
@@ -1305,6 +1417,7 @@ static void bringup_stop_motors(void)
     g_line_left_speed_correction = 0.0F;
     g_line_right_speed_correction = 0.0F;
     g_line_speed_correction_valid = false;
+    g_item56_line_half_difference_mm_per_second = 0.0F;
     g_has_previous_line_sample_time = false;
     g_tracking_active = false;
     g_stop_requested = false;
@@ -1369,6 +1482,17 @@ static void bringup_start_tracking(
             return;
         }
     }
+    {
+        const Mode_Car_LinearProfileConfig profile_config =
+            bringup_linear_profile_config();
+
+        if (!Mode_Car_LinearSpeedProfile_Init(
+                &g_speed_profile, &profile_config)) {
+            g_BRINGUP_Fault = 11U;
+            bringup_stop_motors();
+            return;
+        }
+    }
     for (size_t index = 0U; index < BRINGUP_MOTOR_COUNT; ++index) {
         if (Device_Motor_SetUnlocked(&g_motor[index], true) !=
                 DEVICE_MOTOR_RESULT_OK) {
@@ -1381,7 +1505,7 @@ static void bringup_start_tracking(
     if (!Mode_Car_LinearSpeedProfile_Start(
             &g_speed_profile,
             bringup_mean_distance(speed_a, speed_b),
-            TEMPLATE_BRINGUP_LINE_BASE_SPEED_MM_PER_SECOND)) {
+            bringup_launch_cruise_speed_mm_per_second())) {
         g_BRINGUP_Fault = 11U;
         bringup_stop_motors();
         return;
@@ -1400,6 +1524,7 @@ static void bringup_start_tracking(
     g_processed_grayscale_sequence = 0U;
     g_has_previous_line_sample_time = false;
     g_has_last_valid_line_sample = false;
+    g_item56_line_half_difference_mm_per_second = 0.0F;
     g_tracking_started_ms = now_ms;
     g_inspection_elapsed_ms = 0U;
     g_score_elapsed_ms = 0U;
@@ -1454,7 +1579,7 @@ static void bringup_latch_competition_time(
                     BRINGUP_COMPETITION_MODE_ITEM_6)) {
         pass_distance_mm = g_finish_marker_latched ?
             g_finish_marker_distance_mm +
-                TEMPLATE_BRINGUP_FINISH_MARKER_STOP_RUNOUT_MM :
+                TEMPLATE_BRINGUP_ITEM56_LINE_SENSOR_OFFSET_MM :
             g_route_start_distance_mm +
                 TEMPLATE_BRINGUP_H_ONE_LAP_DISTANCE_MM;
     } else {
@@ -1720,16 +1845,48 @@ static void bringup_update_tracking(
                     angle_output.target_right_speed));
     } else if (grayscale_fresh && g_line_sample_available &&
         g_line_sample.line_present && g_line_speed_correction_valid) {
-        bringup_set_planned_targets(
-            profile_output.reference_speed_mm_per_second,
-            measured_speed,
-            g_line_left_speed_correction,
-            g_line_right_speed_correction,
-            true);
+        if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) {
+            const float raw_half_difference = 0.5F *
+                (g_line_right_speed_correction -
+                    g_line_left_speed_correction);
+            const float half_difference =
+                bringup_item56_slew_line_half_difference(
+                    raw_half_difference, dt_seconds);
+
+            /* M5/M6 keep INS observable but use only bounded, slew-limited
+             * grayscale steering around the longitudinal mean target. */
+            bringup_set_planned_targets(
+                profile_output.reference_speed_mm_per_second,
+                measured_speed,
+                -half_difference,
+                half_difference,
+                false);
+        } else {
+            bringup_set_planned_targets(
+                profile_output.reference_speed_mm_per_second,
+                measured_speed,
+                g_line_left_speed_correction,
+                g_line_right_speed_correction,
+                false);
+        }
     } else {
-        bringup_set_planned_targets(
-            profile_output.reference_speed_mm_per_second,
-            measured_speed, 0.0F, 0.0F, true);
+        if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) {
+            const float half_difference =
+                bringup_item56_slew_line_half_difference(0.0F, dt_seconds);
+
+            bringup_set_planned_targets(
+                profile_output.reference_speed_mm_per_second,
+                measured_speed,
+                -half_difference,
+                half_difference,
+                false);
+        } else {
+            bringup_set_planned_targets(
+                profile_output.reference_speed_mm_per_second,
+                measured_speed, 0.0F, 0.0F, true);
+        }
     }
     speed_input = (Mode_Car_SpeedControllerInput){
         .dt_seconds = dt_seconds,

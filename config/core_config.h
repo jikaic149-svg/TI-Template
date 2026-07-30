@@ -87,6 +87,39 @@
 /* M2 line-tracking wheel-speed half difference. */
 #define TEMPLATE_BRINGUP_ITEM2_MAXIMUM_HALF_DIFFERENCE_MM_PER_SECOND 230.0F
 
+/* M4 A->B longitudinal plan. The 10 ms profile changes its reference by
+ * exactly 1.2 mm/s per full control step during both acceleration and
+ * braking. The 50 mm goal runout leaves 15 mm beyond B after the shared
+ * 35 mm guard, so the scoring point is crossed rather than approached only.
+ * Ideal kinematics cross B in about 6.9 s, below the 8 s requirement. */
+#define TEMPLATE_BRINGUP_ITEM4_AB_CRUISE_SPEED_MM_PER_SECOND 320.0F
+#define TEMPLATE_BRINGUP_ITEM4_AB_ACCELERATION_MM_PER_SECOND2 120.0F
+#define TEMPLATE_BRINGUP_ITEM4_AB_DECELERATION_MM_PER_SECOND2 120.0F
+#define TEMPLATE_BRINGUP_ITEM4_PASS_B_RUNOUT_MM 50.0F
+
+/* M5/M6 one-lap ball-carrying plan. The 234 mm/s route cap stays unchanged
+ * through the four tangent points. On the final D->A arc it reaches 110 mm/s
+ * at the lower edge of the finish-marker window. Three 210 mm/s VOFA runs
+ * still crossed A by 45-47 mm because measured speed lagged the position
+ * envelope. At 110 mm/s the 100 mm/s^2 envelope reserves 60.5 mm for braking;
+ * the 265 mm marker goal therefore keeps the existing smooth profile while
+ * reducing the predicted residual crossing error to about 15 mm. */
+#define TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND 234.0F
+#define TEMPLATE_BRINGUP_ITEM56_LAP_ACCELERATION_MM_PER_SECOND2 120.0F
+#define TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2 100.0F
+#define TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND 110.0F
+#define TEMPLATE_BRINGUP_ITEM56_LINE_SENSOR_OFFSET_MM 230.0F
+#define TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM 265.0F
+/* M5/M6 grayscale steering is reconstructed as a mean-preserving wheel-speed
+ * half difference. The 70 mm/s bound allows a 140 mm/s full difference versus
+ * about 94 mm/s required by a 234 mm/s, R500, 200 mm wheelbase turn. A
+ * 3000 mm/s^2 half-difference slew changes each wheel correction by at most
+ * 30 mm/s per 10 ms Task step and establishes the roughly 47 mm/s R500 half
+ * difference in about 16 ms, avoiding a sensor-to-steering phase lag. */
+#define TEMPLATE_BRINGUP_ITEM56_LINE_STEERING_KD 0.03F
+#define TEMPLATE_BRINGUP_ITEM56_MAXIMUM_HALF_DIFFERENCE_MM_PER_SECOND 70.0F
+#define TEMPLATE_BRINGUP_ITEM56_HALF_DIFFERENCE_SLEW_MM_PER_SECOND2 3000.0F
+
 /* Longitudinal motion profile.  Distances/speeds are mm and mm/s; the
  * acceleration limits are mm/s^2.  Guard distance covers encoder quantizing,
  * drivetrain delay and the physical stop offset and must be calibrated on the

@@ -528,7 +528,7 @@ static void test_debug_receive_validation_order_and_age(void)
     fake_reset();
     assert(Device_PeerLink_Init(&link, &config, 0U));
     length = encode_debug_telemetry(
-        1U, -50000, 600, -700, 0U, UINT16_MAX,
+        1U, -60000, 60000, -60000, 0U, UINT16_MAX,
         -300, 10000, -100000, 2U,
         DEVICE_PEER_LINK_DEBUG_STATUS_MASK, 9U, frame);
     fake_queue_rx(frame, length);
@@ -538,9 +538,9 @@ static void test_debug_receive_validation_order_and_age(void)
         &link, 200U, 100U, &telemetry));
     assert(!Device_PeerLink_GetRemoteDebugTelemetry(
         &link, 201U, 100U, &telemetry));
-    assert(telemetry.chassis_acceleration_mm_s2 == -50000);
-    assert(telemetry.chassis_compensation_mdeg == 600);
-    assert(telemetry.rod_command_mdeg == -700);
+    assert(telemetry.chassis_acceleration_mm_s2 == -60000);
+    assert(telemetry.chassis_compensation_mdeg == 60000);
+    assert(telemetry.rod_command_mdeg == -60000);
     assert(telemetry.motor_target_raw == 0U);
     assert(telemetry.motor_feedback_raw == UINT16_MAX);
     assert(telemetry.motor_command_current_ma == -300);
