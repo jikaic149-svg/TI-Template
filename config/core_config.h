@@ -99,17 +99,16 @@
 
 /* M5/M6 one-lap ball-carrying plan. The 234 mm/s route cap stays unchanged
  * through the four tangent points. On the final D->A arc it reaches 110 mm/s
- * at the lower edge of the finish-marker window. Three 210 mm/s VOFA runs
- * still crossed A by 45-47 mm because measured speed lagged the position
- * envelope. At 110 mm/s the 100 mm/s^2 envelope reserves 60.5 mm for braking;
- * the 265 mm marker goal therefore keeps the existing smooth profile while
- * reducing the predicted residual crossing error to about 15 mm. */
+ * at the lower edge of the finish-marker window. After marker confirmation,
+ * M5/M6 reuse M2's fixed 180 mm grayscale-tracking runout before stopping and
+ * add launch-yaw correction during that final segment. The 230 mm sensor
+ * offset remains the independent score-time reference. */
 #define TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND 234.0F
 #define TEMPLATE_BRINGUP_ITEM56_LAP_ACCELERATION_MM_PER_SECOND2 120.0F
 #define TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2 100.0F
 #define TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND 110.0F
 #define TEMPLATE_BRINGUP_ITEM56_LINE_SENSOR_OFFSET_MM 230.0F
-#define TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM 265.0F
+#define TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM 180.0F
 /* M5/M6 grayscale steering is reconstructed as a mean-preserving wheel-speed
  * half difference. The 70 mm/s bound allows a 140 mm/s full difference versus
  * about 94 mm/s required by a 234 mm/s, R500, 200 mm wheelbase turn. A

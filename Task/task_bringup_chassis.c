@@ -1343,8 +1343,7 @@ static bool bringup_init_devices(void)
             (TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND >
                 TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND) ||
             (TEMPLATE_BRINGUP_ITEM56_LINE_SENSOR_OFFSET_MM <= 0.0F) ||
-            (TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM <=
-                TEMPLATE_BRINGUP_ITEM56_LINE_SENSOR_OFFSET_MM) ||
+            (TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM <= 0.0F) ||
             (TEMPLATE_BRINGUP_ITEM56_LINE_STEERING_KD < 0.0F) ||
             (TEMPLATE_BRINGUP_ITEM56_MAXIMUM_HALF_DIFFERENCE_MM_PER_SECOND <=
                 0.0F) ||
@@ -1646,8 +1645,12 @@ static void bringup_update_tracking(
     Mode_Car_LinearProfileOutput profile_output;
     Mode_Car_SpeedControllerInput speed_input;
     Mode_Car_SpeedControllerOutput speed_output;
+    Mode_Car_AngleControllerOutput item56_finish_heading_output = {0};
     const float current_distance = bringup_mean_distance(speed_a, speed_b);
     const float measured_speed = bringup_mean_speed(speed_a, speed_b);
+    const bool item56_mode =
+        (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+        (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6);
     bool snapshot_available;
     bool grayscale_fresh = false;
     bool auxiliary_hold = false;
@@ -1776,8 +1779,24 @@ static void bringup_update_tracking(
             return;
         }
     }
-    /* Item 4 holds the launch yaw with the dedicated angle PID. Grayscale and
-     * route-lookahead corrections remain observable but cannot steer M4. */
+    if (item56_mode && g_finish_marker_latched && imu_navigation_valid &&
+        (imu_snapshot != NULL)) {
+        if (!Mode_Car_AngleController_Update(
+                &g_angle_controller,
+                &(Mode_Car_AngleControllerInput){
+                    .dt_seconds = dt_seconds,
+                    .target_yaw_deg = g_navigation_start_yaw_deg,
+                    .measured_yaw_deg = imu_snapshot->yaw_deg,
+                    .measured_yaw_rate_deg_per_second =
+                        imu_snapshot->yaw_rate_dps,
+                }, &item56_finish_heading_output)) {
+            g_BRINGUP_Fault = 9U;
+            bringup_stop_motors();
+            return;
+        }
+    }
+    /* Item 4 holds launch yaw throughout. M2 and M5/M6 keep grayscale
+     * steering, then add launch-yaw correction only after the finish marker. */
     if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_2) {
         Mode_Car_AngleControllerOutput finish_heading_output = {0};
         const float line_left_guidance =
@@ -1845,8 +1864,7 @@ static void bringup_update_tracking(
                     angle_output.target_right_speed));
     } else if (grayscale_fresh && g_line_sample_available &&
         g_line_sample.line_present && g_line_speed_correction_valid) {
-        if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
-            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) {
+        if (item56_mode) {
             const float raw_half_difference = 0.5F *
                 (g_line_right_speed_correction -
                     g_line_left_speed_correction);
@@ -1854,13 +1872,15 @@ static void bringup_update_tracking(
                 bringup_item56_slew_line_half_difference(
                     raw_half_difference, dt_seconds);
 
-            /* M5/M6 keep INS observable but use only bounded, slew-limited
-             * grayscale steering around the longitudinal mean target. */
+            /* M5/M6 retain bounded grayscale guidance. After the marker, the
+             * launch-yaw PID is added without changing the longitudinal mean. */
             bringup_set_planned_targets(
                 profile_output.reference_speed_mm_per_second,
                 measured_speed,
-                -half_difference,
-                half_difference,
+                -half_difference +
+                    item56_finish_heading_output.target_left_speed,
+                half_difference +
+                    item56_finish_heading_output.target_right_speed,
                 false);
         } else {
             bringup_set_planned_targets(
@@ -1871,16 +1891,17 @@ static void bringup_update_tracking(
                 false);
         }
     } else {
-        if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
-            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) {
+        if (item56_mode) {
             const float half_difference =
                 bringup_item56_slew_line_half_difference(0.0F, dt_seconds);
 
             bringup_set_planned_targets(
                 profile_output.reference_speed_mm_per_second,
                 measured_speed,
-                -half_difference,
-                half_difference,
+                -half_difference +
+                    item56_finish_heading_output.target_left_speed,
+                half_difference +
+                    item56_finish_heading_output.target_right_speed,
                 false);
         } else {
             bringup_set_planned_targets(

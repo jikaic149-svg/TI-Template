@@ -7,8 +7,8 @@
 /*
  * Chassis bring-up (H-title): while parked, a long key press cycles contest
  * items 2..6 and a short press confirms the displayed item. Items 2, 5 and 6
- * start the one-lap route. Item 2 uses the complete Yahboom grayscale steering
- * output without INS lookahead or absolute-yaw steering. In the bounded final
+ * start the one-lap route. Before its finish marker, item 2 uses the complete
+ * Yahboom grayscale steering output without INS lookahead or absolute-yaw steering. In the bounded final
  * window, a two-frame wide-black marker changes its goal to marker odometry +
  * 180 mm; mean encoder distance 6141.6 mm remains the missed-marker fallback.
  * A prolonged missing line
@@ -18,18 +18,23 @@
  * 120 mm/s^2 acceleration/deceleration profile capped at 320 mm/s. Its goal
  * is 50 mm beyond B so the scoring point is crossed without grayscale or
  * route-lookahead steering. Item 3 keeps the chassis locked for the
- * stationary ball test. Items 5 and 6 use pure infrared grayscale steering
+ * stationary ball test. Items 5 and 6 use infrared grayscale steering
  * around a constant 234 mm/s longitudinal cap with 120 mm/s^2 ramps. Their
  * ideal one-lap pass time is about 27.2 s. A 70 mm/s half-difference bound and
  * 3000 mm/s^2 slew keep grayscale wheel targets continuous without delaying
- * curve entry; after the front
- * sensor sees A, its measured 230 mm offset defines the planned stop. A short press while moving
+ * curve entry. After the front sensor sees A, they keep grayscale guidance,
+ * add launch-yaw correction and use the same 180 mm planned runout as M2; the
+ * measured 230 mm sensor offset remains the score-time reference. A short
+ * press while moving
  * requests a planned stop; a long press while moving cannot switch items.
  * M2 uses 500 mm/s on the two 1.5 m straight sections and 380 mm/s on the two
  * semicircles; both values are configuration-only starting points and must be
- * calibrated on the final chassis. On M2, the final marker approach reaches 220 mm/s while retaining
+ * calibrated on the final chassis. On M2, the final marker approach reaches
+ * 220 mm/s while retaining
  * the grayscale steering differential; after marker confirmation, a bounded
- * launch-yaw correction is added during braking. The marker requires at least six raw channels >=900 and an
+ * launch-yaw correction is added during braking; M5/M6 use the same correction
+ * after their marker confirmation. The marker requires at least six raw
+ * channels >=900 and an
  * eight-channel average >=1700 for two consecutive new frames after a normal
  * frame inside the 5800 +/-300 mm search window.
  * The profile ramps acceleration and deceleration linearly, uses the
