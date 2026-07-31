@@ -2226,3 +2226,21 @@
 - 已知限制与待确认：软件测试和回读不能代替赛道实测。下一轮应确认M4过B时间、M5/M6横杠
   后停车距离、中段CH6规划加速度长期为0、结尾CH6按jerk回零，以及停车后100 ms零速保持期间
   两轮速度确实收敛；本轮未按KEY。
+
+## 2026-08-01：滤波轮速加速度估计、CAR 回传与 VOFA 诊断
+
+- 结论：M4/M5/M6 已使用独立轮速加速度估计器向 F407 提供低噪声观测；原速度规划器的 CH12/加速度反馈输入保持不变。
+- 修改原因：现有单步轮速差分在三份 VOFA 匀速段存在明显正偏，不能直接用于杆球阻尼融合。
+- 最终决策：左右轮平均速度采用 13 点最小二乘斜率、100 ms 一阶低通和 `±1000 mm/s²` 限幅；完整 CAR 扩展为 13 字段并保留 8/9/10/11 字段兼容。只有 M4/M5/M6 规划有效且估计器预热完成时置 `wheel_accel_valid=1`；异常时间戳、采样间隔超过 30 ms、编码器无效或规划退出均复位。VOFA 追加 CH32 滤波值和 CH33 有效位。
+- 涉及文件：`APP/Algorithm/Filter`、`Device/Communication/PeerLink`、`Task/task_bringup_chassis.c`、`config/core_config.h`、CMake/验证脚本、PeerLink/估计器测试与文档；未修改 Task 周期/优先级、规划参数、BSP、SysConfig、ISR/DMA、引脚或动态内存策略。
+- 验证：轮速加速度与 PeerLink 主机测试通过；`tools/project.ps1 -Action Verify -Scope Auto` 全部通过；G3519 Bring-up Debug/Release 完整链接通过，BIN 分别为 87456/82872 B。
+- 已知限制与待确认：本轮未烧录、未进行双端 UART 或实车动态验证。100 ms 低通与 F407 观测方差需根据新 VOFA 的 CH32/CH33、CH22/CH23 继续校准，不能仅凭构建结果认定阻尼已达到最优。
+
+## 2026-08-01：13 字段融合版本双端部署
+
+- 结论：G3519 Bring-up Debug 与配套 F407 Debug 均已完成烧录、全长回读校验并复位；未按 KEY，也未启动闭环。
+- 修改原因：新增轮速加速度字段会被旧 F407 拒绝，用户明确要求将匹配版本同步部署到两块 MCU。
+- 最终决策：G3519 锁定 `0D28:0204` DAPLink，最终写入 `87456 B` Bring-up 产品镜像；F407 锁定 `0416:5051` CMSIS-DAP，写入 `52068 B` Debug 镜像。通用 `tools/mspm0.ps1 -Action Flash` 曾按默认映射短暂写入 `18792 B` AT8236 基础镜像，发现 profile 不符后立即显式写回 Bring-up 镜像并以最终全长回读为准。
+- 涉及文件：仅更新本记录；未修改源码、参数、协议、Task、BSP、SysConfig、ISR/DMA 或探针本机配置。
+- 验证方式和结果：G3519 源 BIN 与 `0x00000000` 起始的 `87456 B` 回读 SHA-256 均为 `91EB1A2F0A2CFCCE10496F84892FF07E4F0BBEDF2B7FB41A5B51EC1B549CA644`；F407 源 BIN 与 `0x08000000` 起始的 `52068 B` 回读 SHA-256 均为 `55C8ED9F1AA3B3DB00A9E0714E7099C2FFC3C63661F4B98722EE3B2C35C8A953`。复位后 COM5 连续输出 34 列 VOFA；停止态 `CH30=0`、`CH31=552`、`CH32=0`、`CH33=0`，新增通道已部署且规划无效时正确清零。
+- 已知限制与待确认：当前静态 DBG 的 motor_online/motor_enabled 位未置位，未验证运动时的轮速加速度融合。电机恢复在线后需实测 M4/M5/M6 的 CH32/CH33 连续性、停车段 CH22/CH23 与 M6 任意球位的杆角余量。

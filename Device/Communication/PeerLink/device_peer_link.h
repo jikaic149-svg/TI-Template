@@ -150,9 +150,9 @@ bool Device_PeerLink_Step(Device_PeerLink *link, uint32_t now_ms);
 
 /* Queue one G3519 chassis sample. Task state and a valid plan use the 9/11
  * field schema. A valid filtered wheel acceleration extends that full schema
- * to 13 fields. Older 8/9/10/11-field receivers remain compatible because
- * the extension is emitted only when the new observation is valid. BUSY drops
- * the complete frame without advancing its sequence. */
+ * to 13 fields. New receivers retain compatibility with older senders; a
+ * pre-extension F407 receiver must not be paired once 13-field output is
+ * enabled. BUSY drops the complete frame without advancing its sequence. */
 bool Device_PeerLink_SendCarState(
     Device_PeerLink *link,
     const Device_PeerLink_CarState *state);

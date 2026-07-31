@@ -162,3 +162,12 @@ ID/使能、电流、转速、角度、绝对编码器、心跳和
 稳定停车或故障停车时立即只刷新 `CAR:STOP mm:ss.d` 最终时间，随后恢复每 50 ms 一行的
 待机扫描。运行期间屏幕保留发车前的最后画面，不绘制递增的 `CAR:RUN` 时间。受 16 字符
 宽度限制，最终时间显示上限为 `99:59.9`；该显示计时不进入速度规划、VOFA 或板间协议。
+
+## Filtered wheel acceleration diagnostics (2026-08-01)
+
+M4/M5/M6 run a separate mean-wheel acceleration estimator for F407 fusion.
+It uses a 13-sample least-squares speed slope, a 100 ms low-pass, and a
+`+/-1000 mm/s2` clamp. It does not replace the speed profile's existing CH12
+measurement or acceleration feedback. VOFA appends CH32=filtered wheel
+acceleration (`mm/s2`) and CH33=explicit validity. When the plan is inactive,
+the estimator resets and both channels are zero.

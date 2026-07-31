@@ -16,3 +16,8 @@ Context/Input/Output 版本。
 powershell -NoProfile -ExecutionPolicy Bypass -File .\APP\Algorithm\Filter\tests\run_gcc_tests.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\APP\Algorithm\Filter\tests\run_arm_compile.ps1
 ```
+
+Wheel acceleration estimation uses a fixed-size least-squares window over
+real sample timestamps followed by a first-order low-pass. Repeated samples,
+backward timestamps, or excessive gaps restart warm-up; no dynamic allocation
+or RTOS dependency is used.

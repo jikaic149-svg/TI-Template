@@ -87,3 +87,14 @@ PA9 TX/PA10 RX。接线必须 TX/RX 交叉并共地。
 源码/主机测试、ARM 编译、Debug/Release 链接、烧录回读和双端 UART 抓帧是不同结论。
 上板后仍需检查 100 Hz 帧率、序号、BUSY 计数、50 ms 失效、重启会话，以及车速、
 X/Z 比力和 Pitch 角速度的方向与尺度。
+
+## 13-field filtered wheel-acceleration CAR extension (2026-08-01)
+
+The full G3519-to-F407 payload is the existing 11 fields followed by
+`filtered_wheel_acceleration_x_mm_s2,wheel_accel_valid`. The parser remains
+compatible with 8/9/10/11/13 fields. A pre-extension F407 parser rejects the
+13-field form, so both boards must be deployed together. The sender emits 13 fields only while an
+M4/M5/M6 plan is valid and the wheel estimator has a complete output window;
+otherwise it emits the existing 11- or 9-field form. `wheel_accel_valid=1`
+requires `plan_valid=1`. BUSY still drops the complete frame and does not
+advance the CAR sequence.
