@@ -8,6 +8,7 @@
 #include "task.h"
 
 #include "core_config.h"
+#include "algorithm_filter_wheel_acceleration.h"
 #include "device_encoder.h"
 #include "device_icm45686_spi.h"
 #include "device_jy61p.h"
@@ -188,6 +189,7 @@ static Mode_Car_AnalogTrackingContext g_tracking_controller;
 static Mode_Car_FusedNavigation g_navigation;
 static Mode_Car_FusedNavigationOutput g_navigation_output;
 static Device_PeerLink g_peer_link;
+static Algorithm_Filter_WheelAcceleration g_wheel_acceleration_estimator;
 static uint16_t g_display_line_pixels[
     BRINGUP_DISPLAY_WIDTH * BRINGUP_DISPLAY_LINE_HEIGHT];
 static char g_display_last_text[BRINGUP_DISPLAY_STATUS_LINE_COUNT]
@@ -245,6 +247,8 @@ static float g_route_start_distance_mm = 0.0F;
 static Bringup_CompetitionMode g_competition_mode =
     BRINGUP_COMPETITION_MODE_ITEM_2;
 static bool g_competition_mode_confirmed = false;
+static int32_t g_filtered_wheel_acceleration_mm_s2 = 0;
+static bool g_filtered_wheel_acceleration_valid = false;
 
 static uint32_t bringup_now_ms(void)
 {
@@ -434,6 +438,51 @@ static bool bringup_scale_i32(
     return true;
 }
 
+static bool bringup_acceleration_plan_active(void)
+{
+    return ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) ||
+            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) &&
+        g_tracking_active && g_speed_profile.output.valid &&
+        g_speed_profile.output.running;
+}
+
+static void bringup_update_filtered_wheel_acceleration(
+    uint32_t now_ms,
+    const Device_Encoder_Sample *speed_a,
+    const Device_Encoder_Sample *speed_b,
+    bool encoder_samples_valid)
+{
+    float acceleration_mm_s2 = 0.0F;
+    bool output_valid = false;
+
+    g_filtered_wheel_acceleration_mm_s2 = 0;
+    g_filtered_wheel_acceleration_valid = false;
+    if (!bringup_acceleration_plan_active() || !encoder_samples_valid ||
+        (speed_a == NULL) || (speed_b == NULL)) {
+        Algorithm_Filter_WheelAcceleration_Reset(
+            &g_wheel_acceleration_estimator);
+        return;
+    }
+    if (!Algorithm_Filter_WheelAcceleration_Update(
+            &g_wheel_acceleration_estimator,
+            now_ms,
+            bringup_mean_speed(speed_a, speed_b),
+            &acceleration_mm_s2,
+            &output_valid)) {
+        Algorithm_Filter_WheelAcceleration_Reset(
+            &g_wheel_acceleration_estimator);
+        return;
+    }
+    if (output_valid && bringup_scale_i32(
+            acceleration_mm_s2,
+            1.0F,
+            DEVICE_PEER_LINK_CAR_WHEEL_ACCEL_ABS_MAX_MM_PER_SECOND2,
+            &g_filtered_wheel_acceleration_mm_s2)) {
+        g_filtered_wheel_acceleration_valid = true;
+    }
+}
+
 static Device_PeerLink_CarState bringup_make_car_state(
     uint32_t now_ms,
     const Device_Encoder_Sample *speed_a,
@@ -452,11 +501,7 @@ static Device_PeerLink_CarState bringup_make_car_state(
     float planned_acceleration = 0.0F;
     bool plan_active = false;
 
-    if (((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) ||
-            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
-            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) &&
-        g_tracking_active && g_speed_profile.output.valid &&
-        g_speed_profile.output.running) {
+    if (bringup_acceleration_plan_active()) {
         /* M4/M5/M6 use one acceleration truth: the same jerk-limited profile
          * drives the wheels and F407 feedforward. Cruise remains an explicit
          * valid zero plan; once the profile stops, validity clears and F407
@@ -470,6 +515,13 @@ static Device_PeerLink_CarState bringup_make_car_state(
             planned_acceleration, 1.0F,
             DEVICE_PEER_LINK_CAR_PLAN_ACCEL_ABS_MAX_MM_PER_SECOND2,
             &state.planned_acceleration_x_mm_per_second2);
+    state.filtered_wheel_acceleration_valid =
+        state.planned_acceleration_valid &&
+        g_filtered_wheel_acceleration_valid;
+    if (state.filtered_wheel_acceleration_valid) {
+        state.filtered_wheel_acceleration_x_mm_per_second2 =
+            g_filtered_wheel_acceleration_mm_s2;
+    }
 
     if ((speed_a != NULL) && (speed_b != NULL) &&
         (imu_snapshot != NULL) && encoder_samples_valid &&
@@ -1297,6 +1349,17 @@ static bool bringup_init_devices(void)
         .startup_delay_ms = 10U,
     };
     Device_IMU_Config imu_config = Device_IMU_DefaultConfig();
+    const Algorithm_Filter_WheelAccelerationConfig
+        wheel_acceleration_config = {
+            .window_sample_count =
+                TEMPLATE_BRINGUP_WHEEL_ACCEL_WINDOW_SAMPLES,
+            .maximum_sample_interval_ms =
+                TEMPLATE_BRINGUP_WHEEL_ACCEL_MAX_SAMPLE_STEP_MS,
+            .low_pass_time_constant_s =
+                TEMPLATE_BRINGUP_WHEEL_ACCEL_FILTER_TAU_S,
+            .maximum_absolute_acceleration_mm_s2 =
+                TEMPLATE_BRINGUP_WHEEL_ACCEL_MAX_ABS_MM_S2,
+        };
     Device_LineTracking_Config line_config;
 
     if (!Device_RGB_DefaultConfig(0U, &rgb_config) ||
@@ -1473,6 +1536,12 @@ static bool bringup_init_devices(void)
             g_BRINGUP_Fault = 10U;
             return false;
         }
+    }
+    if (!Algorithm_Filter_WheelAcceleration_Init(
+            &g_wheel_acceleration_estimator,
+            &wheel_acceleration_config)) {
+        g_BRINGUP_Fault = 13U;
+        return false;
     }
     return true;
 }
@@ -2290,12 +2359,13 @@ static void bringup_send_firewater(
      * braking trigger distance, chassis yaw, line error, profile state,
      * measured mean-wheel acceleration and the actually applied acceleration
      * feedback correction, then fresh Yahboom raw ADC values x1..x8 and
-     * F407 DBG CH22..CH31. */
+     * F407 DBG CH22..CH31, then the new filtered mean-wheel acceleration and
+     * its explicit validity bit at CH32..CH33. */
     length = snprintf(line, sizeof(line),
         "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%s%ld.%02ld,"
         "%s%ld.%03ld,%u,%s%ld.%02ld,%s%ld.%02ld,"
         "%u,%u,%u,%u,%u,%u,%u,%u,"
-        "%ld,%ld,%ld,%u,%u,%ld,%ld,%ld,%u,%u\n",
+        "%ld,%ld,%ld,%u,%u,%ld,%ld,%ld,%u,%u,%ld,%u\n",
         (long)route_distance_mm,
         (long)speed_a->speed_distance_per_second,
         (long)speed_b->speed_distance_per_second,
@@ -2336,7 +2406,9 @@ static void bringup_send_firewater(
         (long)f407_debug.motor_speed_centi_rpm,
         (unsigned)f407_debug.control_phase,
         (unsigned)(f407_debug.status_flags |
-            (f407_debug_fresh ? BRINGUP_F407_DEBUG_FRESH_FLAG : 0U)));
+            (f407_debug_fresh ? BRINGUP_F407_DEBUG_FRESH_FLAG : 0U)),
+        (long)g_filtered_wheel_acceleration_mm_s2,
+        (unsigned)(g_filtered_wheel_acceleration_valid ? 1U : 0U));
     if ((length > 0) && ((size_t)length < sizeof(line))) {
         /* Dropping a frame on BUSY is acceptable for bring-up telemetry. */
         (void)Device_Serial_WriteBuffered(
@@ -2493,6 +2565,8 @@ static void Task_BringupChassis(void *argument)
                 bringup_latch_competition_time(
                     now_ms, bringup_mean_distance(&sample_a, &sample_b));
             }
+            bringup_update_filtered_wheel_acceleration(
+                now_ms, &sample_a, &sample_b, encoder_samples_valid);
 
             if (g_peer_link_ready &&
                 ((uint32_t)(now_ms - last_car_state_ms) >=

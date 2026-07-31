@@ -195,6 +195,13 @@
 #define TEMPLATE_PEER_LINK_RX_BYTES_PER_STEP 128U
 /* G3519 submits one latest chassis state to F407 at 100 Hz. */
 #define TEMPLATE_PEER_LINK_CAR_STATE_PERIOD_MS UINT32_C(10)
+/* Mean wheel speed is differentiated by a 13-sample (~120 ms) least-squares
+ * window, then low-pass filtered before it is exported. This deliberately
+ * does not replace the speed profile's existing acceleration-feedback input. */
+#define TEMPLATE_BRINGUP_WHEEL_ACCEL_WINDOW_SAMPLES       13U
+#define TEMPLATE_BRINGUP_WHEEL_ACCEL_MAX_SAMPLE_STEP_MS UINT32_C(30)
+#define TEMPLATE_BRINGUP_WHEEL_ACCEL_FILTER_TAU_S          0.10F
+#define TEMPLATE_BRINGUP_WHEEL_ACCEL_MAX_ABS_MM_S2       1000.0F
 /* The debug/product ball-target entrance stays 5 mm inside the protocol's
  * +/-125.0 mm coding domain. Units are 0.1 mm. A queued command may retry at
  * most once per 10 ms Task cycle and stops after this many BUSY results. */
