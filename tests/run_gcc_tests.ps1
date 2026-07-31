@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDirectory,
-[ValidateSet("All", "Watchdog", "Communication", "IMU", "Motor", "Display", "Navigation", "LineTracking", "SpeedProfile")]
+[ValidateSet("All", "Watchdog", "Communication", "IMU", "Motor", "Display", "Navigation", "LineTracking", "SpeedProfile", "WheelAcceleration")]
     [string[]]$Scope = @("All")
 )
 
@@ -207,6 +207,15 @@ if (Test-ScopeEnabled -Name "SpeedProfile") {
         "APP\Algorithm\PID\src\algorithm_pid.c",
         "Mode\Car\Control\mode_car_speed_profile.c",
         "tests\speed_profile\test_mode_car_speed_profile.c"
+    )
+}
+
+if (Test-ScopeEnabled -Name "WheelAcceleration") {
+    Invoke-HostTest -Name "wheel_acceleration" -Includes @(
+        "APP\Algorithm\Filter\include"
+    ) -Sources @(
+        "APP\Algorithm\Filter\src\algorithm_filter_wheel_acceleration.c",
+        "tests\wheel_acceleration\test_algorithm_filter_wheel_acceleration.c"
     )
 }
 

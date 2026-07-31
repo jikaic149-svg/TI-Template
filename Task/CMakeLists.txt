@@ -30,6 +30,7 @@ if(TEMPLATE_ENABLE_TASK_BRINGUP_CHASSIS)
         device_serial
         device_st7735s
         device_yahboom_track
+        algorithm_filter
         mode_car
         mode_communicate)
 endif()

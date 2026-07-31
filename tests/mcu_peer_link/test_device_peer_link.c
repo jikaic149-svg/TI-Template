@@ -350,6 +350,7 @@ static void test_car_state_send_boundaries_and_busy_sequence(void)
         .pitch_rate_centi_dps =
             DEVICE_PEER_LINK_CAR_PITCH_RATE_ABS_MAX_CENTI_DPS,
         .competition_mode = DEVICE_PEER_LINK_COMPETITION_MODE_MAX,
+        .competition_task_active = true,
         .valid = true,
     };
     Algorithm_Packet_Parser parser;
@@ -376,9 +377,9 @@ static void test_car_state_send_boundaries_and_busy_sequence(void)
     assert(memcmp(packet.type, "CAR", 3U) == 0);
     assert(packet.sequence == 0U);
     assert(packet.payload_length ==
-        sizeof("2,4294967295,-5000,-50000,50000,100000,1,6,0") - 1U);
+        sizeof("2,4294967295,-5000,-50000,50000,100000,1,6,1") - 1U);
     assert(memcmp(packet.payload,
-        "2,4294967295,-5000,-50000,50000,100000,1,6,0",
+        "2,4294967295,-5000,-50000,50000,100000,1,6,1",
         packet.payload_length) == 0);
 
     s_tx_busy = true;
@@ -408,10 +409,26 @@ static void test_car_state_send_boundaries_and_busy_sequence(void)
         }
         assert(packet.sequence == 2U);
         assert(packet.payload_length ==
-            sizeof("2,4294967295,-5000,-50000,50000,100000,1,6,0,100,1") -
+            sizeof("2,4294967295,-5000,-50000,50000,100000,1,6,1,100,1") -
                 1U);
         assert(memcmp(packet.payload,
-            "2,4294967295,-5000,-50000,50000,100000,1,6,0,100,1",
+            "2,4294967295,-5000,-50000,50000,100000,1,6,1,100,1",
+            packet.payload_length) == 0);
+
+        planned_state.filtered_wheel_acceleration_x_mm_per_second2 = -80;
+        planned_state.filtered_wheel_acceleration_valid = true;
+        assert(Device_PeerLink_SendCarState(&link, &planned_state));
+        Algorithm_Packet_Parser_Reset(&parser);
+        for (size_t index = 0U; index < s_last_tx_length; ++index) {
+            (void)Algorithm_Packet_Parser_Feed(
+                &parser, s_last_tx[index], &packet);
+        }
+        assert(packet.sequence == 3U);
+        assert(packet.payload_length == sizeof(
+            "2,4294967295,-5000,-50000,50000,100000,1,6,1,100,1,-80,1") -
+            1U);
+        assert(memcmp(packet.payload,
+            "2,4294967295,-5000,-50000,50000,100000,1,6,1,100,1,-80,1",
             packet.payload_length) == 0);
     }
 
@@ -428,7 +445,13 @@ static void test_car_state_send_boundaries_and_busy_sequence(void)
             .competition_mode = DEVICE_PEER_LINK_COMPETITION_MODE_MIN,
             .valid = false,
         }));
-    assert(link.status.car_state_tx_error_count == 2U);
+    assert(!Device_PeerLink_SendCarState(
+        &link, &(Device_PeerLink_CarState){
+            .competition_mode = DEVICE_PEER_LINK_COMPETITION_MODE_MIN,
+            .filtered_wheel_acceleration_x_mm_per_second2 = 1,
+            .filtered_wheel_acceleration_valid = true,
+        }));
+    assert(link.status.car_state_tx_error_count == 3U);
 }
 
 static void test_car_state_receive_validation_and_age(void)
@@ -531,6 +554,24 @@ static void test_car_state_receive_validation_and_age(void)
         assert(!state.valid);
         assert(state.planned_acceleration_valid);
         assert(state.planned_acceleration_x_mm_per_second2 == 100);
+    }
+
+    {
+        static const uint8_t wheel_payload[] =
+            "2,2,0,0,0,0,0,6,0,-80,1,-75,1";
+        size_t frame_length = 0U;
+
+        assert(Algorithm_Packet_Encode(
+            "CAR", 2U, wheel_payload, sizeof(wheel_payload) - 1U,
+            frame, sizeof(frame), &frame_length) ==
+            ALGORITHM_PACKET_ENCODE_OK);
+        fake_queue_rx(frame, frame_length);
+        assert(Device_PeerLink_Step(&link, 172U));
+        assert(Device_PeerLink_GetRemoteCarState(
+            &link, 172U, 50U, &state));
+        assert(state.planned_acceleration_valid);
+        assert(state.filtered_wheel_acceleration_valid);
+        assert(state.filtered_wheel_acceleration_x_mm_per_second2 == -75);
     }
 
     length = encode_car_state(

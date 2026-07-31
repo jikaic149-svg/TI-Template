@@ -176,6 +176,7 @@ if (Test-ScopeEnabled -Name "Optional") {
     $sources.Add("APP\Algorithm\Filter\src\algorithm_filter_low_pass.c")
     $sources.Add("APP\Algorithm\Filter\src\algorithm_filter_median.c")
     $sources.Add("APP\Algorithm\Filter\src\algorithm_filter_moving_average.c")
+    $sources.Add("APP\Algorithm\Filter\src\algorithm_filter_wheel_acceleration.c")
     $sources.Add("APP\Algorithm\LQR\src\algorithm_lqr.c")
     $sources.Add("APP\Algorithm\Packet\src\algorithm_packet.c")
     $sources.Add("APP\Algorithm\ReliableLink\src\algorithm_reliable_link.c")

@@ -3,7 +3,8 @@ add_library(algorithm_filter STATIC
     "src/algorithm_filter_kalman.c"
     "src/algorithm_filter_low_pass.c"
     "src/algorithm_filter_median.c"
-    "src/algorithm_filter_moving_average.c")
+    "src/algorithm_filter_moving_average.c"
+    "src/algorithm_filter_wheel_acceleration.c")
 
 target_include_directories(algorithm_filter PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include")

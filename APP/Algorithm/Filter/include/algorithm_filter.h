@@ -6,5 +6,6 @@
 #include "algorithm_filter_low_pass.h"
 #include "algorithm_filter_median.h"
 #include "algorithm_filter_moving_average.h"
+#include "algorithm_filter_wheel_acceleration.h"
 
 #endif

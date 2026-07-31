@@ -2457,24 +2457,22 @@ static void Task_BringupChassis(void *argument)
                 if (key_event != DEVICE_KEY_EVENT_SHORT_PRESS) {
                     continue;
                 }
+                if (g_competition_mode ==
+                        BRINGUP_COMPETITION_MODE_ITEM_3) {
+                    /* M3 KEY owns only the cross-board task state. Do not
+                     * consume the press behind chassis-fault, peer-online, or
+                     * motor-control gates: the next periodic CAR frame carries
+                     * the toggled state and F407 keeps its local enable policy. */
+                    g_competition_mode_confirmed =
+                        !g_competition_mode_confirmed;
+                    g_display_status_line = 3U;
+                    continue;
+                }
                 if (g_tracking_active) {
                     if ((g_BRINGUP_Fault == 0U) &&
                         !bringup_request_stop(&sample_a, &sample_b)) {
                         bringup_stop_motors();
                     }
-                    continue;
-                }
-                if (g_competition_mode ==
-                        BRINGUP_COMPETITION_MODE_ITEM_3) {
-                    if (g_competition_mode_confirmed) {
-                        g_competition_mode_confirmed = false;
-                    }
-                    else if (g_devices_ready && (g_BRINGUP_Fault == 0U) &&
-                             g_peer_link_ready &&
-                             g_peer_link.status.online) {
-                        g_competition_mode_confirmed = true;
-                    }
-                    g_display_status_line = 3U;
                     continue;
                 }
                 if (bringup_launch_hardware_ready(

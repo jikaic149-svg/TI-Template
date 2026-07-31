@@ -1,12 +1,12 @@
 # 工程变更记录
 
-## 2026-08-01：M3短按KEY改为启停滚球任务
+## 2026-08-01：修复M3短按任务状态被链路门控吞掉
 
-- 修改原因：旧逻辑在M3短按时只把“已确认”永久置真，第二次短按无法产生结束事件，F407与Maix均不知道按键启停状态。
-- 最终决策：M3第一次短按在设备、故障和PeerLink门控通过后提交`BTG=0 mm`；第二次短按提交`BST`。两者复用现有有界BUSY重试与独立序号；M3活动期间禁止长按切换赛题，其他赛题按键逻辑不变。
-- 涉及文件：`Task/task_bringup_chassis.c`及本记录；未增加Task、动态内存、协议类型或周期。
-- 验证与部署：G3519 Bring-up Debug clean-first链接成功，FLASH/SRAM_BANK0为`85608/19280 B`；指定DAPLink完成编程和复位，按用户要求未做额外readback/verify。
-- 待确认：TFT黄色M3第一次短按应变绿并启动滚球，第二次短按应变黄并结束滚球。
+- 修改原因：实机中F407持续收到`mode=3`，但`task_active`始终为0。M3启动分支在读取短按事件后仍要求`g_BRINGUP_Fault==0`、PeerLink已初始化且远端心跳在线；任一条件暂时不满足都会吞掉该次按键。通用底盘停止分支还先于M3分支执行，存在被无关`g_tracking_active`状态截获的风险。
+- 最终决策：M3短按优先于通用底盘启停处理，并且每次都无条件翻转本地任务活动位。该状态只随下一帧100 Hz `CAR.task_active`发送；不提交`BTG/BST`，不调用底盘电机或F407 QD4310/CAN的Enable/Disable。M3活动期间长按仍不切换赛题，其他赛题的启停门控保持不变。
+- 涉及文件：`Task/task_bringup_chassis.c`、`tests/mcu_peer_link/test_device_peer_link.c`及本记录；未增加Task、动态内存、协议字段、周期或公共API。
+- 验证方式和结果：Communication Host GCC测试通过，回归明确验证活动位1编码为九字段`CAR`的第九字段；G3519 Bring-up Debug/Release完整链接通过，FLASH/SRAM_BANK0分别为`85584/19280 B`和`81200/19272 B`；`git diff --check`通过。
+- 已知限制与待确认：本轮未烧录。部署后需在M3短按一次确认F407状态出现`0x4000`且Maix开始Task3，再短按一次确认仅清除任务位、F407本地电机使能状态不变。
 
 ## 2026-07-29：回退 G3519 Bring-up 边缘权重与循迹 Kp
 

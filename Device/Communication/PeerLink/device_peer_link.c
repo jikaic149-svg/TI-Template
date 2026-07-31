@@ -7,8 +7,9 @@
 #define DEVICE_PEER_LINK_CAR_STATE_PLANNED_FIELD_COUNT 10U
 #define DEVICE_PEER_LINK_CAR_STATE_TASK_FIELD_COUNT 9U
 #define DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_FIELD_COUNT 11U
+#define DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_WHEEL_FIELD_COUNT 13U
 #define DEVICE_PEER_LINK_CAR_STATE_FIELD_CAPACITY \
-    DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_FIELD_COUNT
+    DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_WHEEL_FIELD_COUNT
 #define DEVICE_PEER_LINK_DEBUG_FIELD_COUNT 11U
 #define DEVICE_PEER_LINK_F407_NODE_ID 1U
 #define DEVICE_PEER_LINK_G3519_NODE_ID 2U
@@ -155,12 +156,21 @@ static bool car_state_values_valid(const Device_PeerLink_CarState *state)
             DEVICE_PEER_LINK_CAR_PITCH_RATE_ABS_MAX_CENTI_DPS) ||
         !absolute_i32_within(state->planned_acceleration_x_mm_per_second2,
             DEVICE_PEER_LINK_CAR_PLAN_ACCEL_ABS_MAX_MM_PER_SECOND2) ||
+        !absolute_i32_within(
+            state->filtered_wheel_acceleration_x_mm_per_second2,
+            DEVICE_PEER_LINK_CAR_WHEEL_ACCEL_ABS_MAX_MM_PER_SECOND2) ||
         (state->competition_mode < DEVICE_PEER_LINK_COMPETITION_MODE_MIN) ||
         (state->competition_mode > DEVICE_PEER_LINK_COMPETITION_MODE_MAX)) {
         return false;
     }
     if (!state->planned_acceleration_valid &&
         (state->planned_acceleration_x_mm_per_second2 != 0)) {
+        return false;
+    }
+    if ((!state->filtered_wheel_acceleration_valid &&
+         (state->filtered_wheel_acceleration_x_mm_per_second2 != 0)) ||
+        (state->filtered_wheel_acceleration_valid &&
+         !state->planned_acceleration_valid)) {
         return false;
     }
     return state->valid ||
@@ -299,8 +309,13 @@ static void consume_car_state(
     int32_t pitch_rate_centi_dps;
     uint32_t valid;
     uint32_t competition_mode;
+    uint32_t competition_task_active = 0U;
     int32_t planned_acceleration = 0;
     uint32_t planned_acceleration_valid = 0U;
+    int32_t filtered_wheel_acceleration = 0;
+    uint32_t filtered_wheel_acceleration_valid = 0U;
+    size_t planned_field_start =
+        DEVICE_PEER_LINK_CAR_STATE_LEGACY_FIELD_COUNT;
 
     for (size_t index = 0U; index <= packet->payload_length; ++index) {
         if ((index == packet->payload_length) ||
@@ -318,20 +333,55 @@ static void consume_car_state(
         }
     }
     if (((field_count != DEVICE_PEER_LINK_CAR_STATE_LEGACY_FIELD_COUNT) &&
-         (field_count != DEVICE_PEER_LINK_CAR_STATE_PLANNED_FIELD_COUNT)) ||
+         (field_count != DEVICE_PEER_LINK_CAR_STATE_PLANNED_FIELD_COUNT) &&
+         (field_count != DEVICE_PEER_LINK_CAR_STATE_TASK_FIELD_COUNT) &&
+         (field_count !=
+            DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_FIELD_COUNT) &&
+         (field_count !=
+            DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_WHEEL_FIELD_COUNT)) ||
         !parse_u32_canonical(
             &packet->payload[start[0]], length[0], &node_id)) {
         increment_saturating(&link->status.car_state_payload_error_count);
         return;
     }
-    if ((field_count == DEVICE_PEER_LINK_CAR_STATE_PLANNED_FIELD_COUNT) &&
+    if ((field_count == DEVICE_PEER_LINK_CAR_STATE_TASK_FIELD_COUNT) ||
+        (field_count == DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_FIELD_COUNT) ||
+        (field_count ==
+            DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_WHEEL_FIELD_COUNT)) {
+        if (!parse_u32_canonical(
+                &packet->payload[start[8]], length[8],
+                &competition_task_active) ||
+            (competition_task_active > 1U)) {
+            increment_saturating(&link->status.car_state_payload_error_count);
+            return;
+        }
+        planned_field_start = DEVICE_PEER_LINK_CAR_STATE_TASK_FIELD_COUNT;
+    }
+    if (((field_count == DEVICE_PEER_LINK_CAR_STATE_PLANNED_FIELD_COUNT) ||
+         (field_count == DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_FIELD_COUNT) ||
+         (field_count ==
+            DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_WHEEL_FIELD_COUNT)) &&
         (!parse_i32_canonical(
-            &packet->payload[start[8]], length[8],
+            &packet->payload[start[planned_field_start]],
+            length[planned_field_start],
             &planned_acceleration) ||
          !parse_u32_canonical(
-            &packet->payload[start[9]], length[9],
+            &packet->payload[start[planned_field_start + 1U]],
+            length[planned_field_start + 1U],
             &planned_acceleration_valid) ||
          (planned_acceleration_valid > 1U))) {
+        increment_saturating(&link->status.car_state_payload_error_count);
+        return;
+    }
+    if ((field_count ==
+            DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_WHEEL_FIELD_COUNT) &&
+        (!parse_i32_canonical(
+            &packet->payload[start[11]], length[11],
+            &filtered_wheel_acceleration) ||
+         !parse_u32_canonical(
+            &packet->payload[start[12]], length[12],
+            &filtered_wheel_acceleration_valid) ||
+         (filtered_wheel_acceleration_valid > 1U))) {
         increment_saturating(&link->status.car_state_payload_error_count);
         return;
     }
@@ -376,10 +426,15 @@ static void consume_car_state(
             .pitch_rate_centi_dps = pitch_rate_centi_dps,
             .planned_acceleration_x_mm_per_second2 =
                 planned_acceleration,
+            .filtered_wheel_acceleration_x_mm_per_second2 =
+                filtered_wheel_acceleration,
             .competition_mode = (uint8_t)competition_mode,
+            .competition_task_active = competition_task_active != 0U,
             .valid = valid != 0U,
             .planned_acceleration_valid =
                 planned_acceleration_valid != 0U,
+            .filtered_wheel_acceleration_valid =
+                filtered_wheel_acceleration_valid != 0U,
             .received_at_ms = now_ms,
         };
 
@@ -735,6 +790,16 @@ bool Device_PeerLink_SendCarState(
           !append_i32(link->tx_payload, sizeof(link->tx_payload),
               &payload_length,
               state->planned_acceleration_x_mm_per_second2) ||
+          !append_separator(link->tx_payload, sizeof(link->tx_payload),
+              &payload_length) ||
+           !append_u32(link->tx_payload, sizeof(link->tx_payload),
+               &payload_length, 1U))) ||
+        (state->filtered_wheel_acceleration_valid &&
+         (!append_separator(link->tx_payload, sizeof(link->tx_payload),
+              &payload_length) ||
+          !append_i32(link->tx_payload, sizeof(link->tx_payload),
+              &payload_length,
+              state->filtered_wheel_acceleration_x_mm_per_second2) ||
           !append_separator(link->tx_payload, sizeof(link->tx_payload),
               &payload_length) ||
           !append_u32(link->tx_payload, sizeof(link->tx_payload),
