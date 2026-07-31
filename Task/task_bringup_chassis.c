@@ -78,7 +78,6 @@ static const float g_line_position_weight[
 #define BRINGUP_F407_DEBUG_MAX_AGE_MS UINT32_C(100)
 #define BRINGUP_F407_DEBUG_FRESH_FLAG UINT16_C(0x0200)
 #define BRINGUP_PENDULUM_IMU_READ_CAPACITY 128U
-#define BRINGUP_PENDULUM_IMU_INVALID_AGE_MS UINT32_C(9999)
 
 #define BRINGUP_DISPLAY_WIDTH 128U
 #define BRINGUP_DISPLAY_LINE_HEIGHT 16U
@@ -149,6 +148,22 @@ static const uint8_t g_bringup_font_5x7['Z' - ' ' + 1U][7] = {
 
 volatile uint32_t g_BRINGUP_Fault = 0U;
 volatile uint32_t g_BRINGUP_DisplayFault = 0U;
+volatile uint32_t g_BRINGUP_BallCommandMailbox = 0U;
+volatile uint32_t g_BRINGUP_BallCommandLastQueued = 0U;
+volatile uint32_t g_BRINGUP_BallCommandStatus =
+    TASK_BRINGUP_BALL_COMMAND_IDLE;
+volatile uint32_t g_BRINGUP_BallCommandQueueAttempts = 0U;
+volatile Task_BringupRodCalibrationSample
+    g_BRINGUP_RodCalibrationSamples[
+        TASK_BRINGUP_ROD_CALIBRATION_CAPACITY];
+volatile uint32_t g_BRINGUP_RodCalibrationCount = 0U;
+volatile uint32_t g_BRINGUP_RodCalibrationPointCount = 0U;
+volatile uint32_t g_BRINGUP_RodCalibrationInvalidEulerCount = 0U;
+volatile uint32_t g_BRINGUP_RodCalibrationState =
+    TASK_BRINGUP_ROD_CALIBRATION_IDLE;
+
+_Static_assert(sizeof(Task_BringupRodCalibrationSample) == 16U,
+    "rod calibration sample must remain 16 bytes");
 
 static StaticTask_t g_bringup_tcb;
 static StackType_t g_bringup_stack[BRINGUP_TASK_STACK_DEPTH];
@@ -184,6 +199,12 @@ static bool g_devices_ready = false;
 static bool g_peer_link_ready = false;
 /* 0 none, 1 init, 2 periodic step, 3 CAR send. */
 static volatile uint32_t g_peer_link_fault = 0U;
+static uint32_t g_ball_command_active_word = 0U;
+static uint32_t g_ball_command_attempt_count = 0U;
+static bool g_ball_command_terminal = false;
+static uint32_t g_rod_calibration_last_debug_ms = 0U;
+static uint8_t g_rod_calibration_last_phase = 0U;
+static uint8_t g_rod_calibration_samples_at_point = 0U;
 static bool g_tracking_active = false;
 static bool g_pendulum_imu_ready = false;
 static bool g_grayscale_start_command_attempted = false;
@@ -260,17 +281,19 @@ static Mode_Car_LinearProfileConfig bringup_linear_profile_config(void)
 
     config.maximum_speed_mm_per_second =
         TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND;
-    if (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) {
-        config.acceleration_up_mm_per_second2 =
-            TEMPLATE_BRINGUP_ITEM4_AB_ACCELERATION_MM_PER_SECOND2;
-        config.acceleration_down_mm_per_second2 =
-            TEMPLATE_BRINGUP_ITEM4_AB_DECELERATION_MM_PER_SECOND2;
-    } else if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+    if ((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) ||
+        (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
         (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) {
         config.acceleration_up_mm_per_second2 =
-            TEMPLATE_BRINGUP_ITEM56_LAP_ACCELERATION_MM_PER_SECOND2;
+            TEMPLATE_BRINGUP_SHARED_ACCELERATION_MM_PER_SECOND2;
         config.acceleration_down_mm_per_second2 =
-            TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2;
+            TEMPLATE_BRINGUP_SHARED_DECELERATION_MM_PER_SECOND2;
+        config.jerk_up_mm_per_second3 =
+            TEMPLATE_BRINGUP_SHARED_JERK_MM_PER_SECOND3;
+        config.jerk_down_mm_per_second3 =
+            TEMPLATE_BRINGUP_SHARED_JERK_MM_PER_SECOND3;
+        config.acceleration_feedback_gain =
+            TEMPLATE_BRINGUP_SHARED_ACCELERATION_FEEDBACK_GAIN;
     }
     return config;
 }
@@ -421,7 +444,32 @@ static Device_PeerLink_CarState bringup_make_car_state(
 {
     Device_PeerLink_CarState state = {
         .sample_ms = now_ms,
+        .competition_mode = (uint8_t)g_competition_mode,
+        .competition_task_active =
+            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_3) &&
+            g_competition_mode_confirmed,
     };
+    float planned_acceleration = 0.0F;
+    bool plan_active = false;
+
+    if (((g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_4) ||
+            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_5) ||
+            (g_competition_mode == BRINGUP_COMPETITION_MODE_ITEM_6)) &&
+        g_tracking_active && g_speed_profile.output.valid &&
+        g_speed_profile.output.running) {
+        /* M4/M5/M6 use one acceleration truth: the same jerk-limited profile
+         * drives the wheels and F407 feedforward. Cruise remains an explicit
+         * valid zero plan; once the profile stops, validity clears and F407
+         * immediately handles residual motion with local BMI088. */
+        planned_acceleration =
+            g_speed_profile.output.reference_acceleration_mm_per_second2;
+        plan_active = true;
+    }
+    state.planned_acceleration_valid = plan_active &&
+        bringup_scale_i32(
+            planned_acceleration, 1.0F,
+            DEVICE_PEER_LINK_CAR_PLAN_ACCEL_ABS_MAX_MM_PER_SECOND2,
+            &state.planned_acceleration_x_mm_per_second2);
 
     if ((speed_a != NULL) && (speed_b != NULL) &&
         (imu_snapshot != NULL) && encoder_samples_valid &&
@@ -592,12 +640,18 @@ static float bringup_route_cruise_speed(float distance_from_start_mm)
                 TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND) -
                 (item56_approach_speed * item56_approach_speed)) /
             (2.0F *
-                TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2);
+                TEMPLATE_BRINGUP_SHARED_DECELERATION_MM_PER_SECOND2) +
+            0.5F *
+                (TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND +
+                    item56_approach_speed) *
+                TEMPLATE_BRINGUP_SHARED_DECELERATION_MM_PER_SECOND2 /
+                TEMPLATE_BRINGUP_SHARED_JERK_MM_PER_SECOND3;
         const float item56_approach_start_mm =
             finish_window_lower_mm - item56_transition_distance_mm;
 
-        /* Keep the full-lap cap through all tangent points, then use the
-         * VOFA-calibrated final approach so the axle can stop at A. */
+        /* Keep the full-lap cap through all tangent points. The final
+         * transition starts early enough to include both jerk ramps and
+         * reaches the approach cap at the marker-window lower edge. */
         if (distance_from_start_mm >= item56_approach_start_mm) {
             return item56_approach_speed;
         }
@@ -617,7 +671,7 @@ static float bringup_route_cruise_speed(float distance_from_start_mm)
     else {
         /* Reach the finish-approach speed at the lower edge of the A-point marker window.
          * SetCruiseSpeed only changes the cap; the existing linear profile
-         * applies the configured 185 mm/s^2 deceleration. */
+         * applies the shared configured deceleration. */
         if (phase_mm >= finish_approach_start_mm) {
             return finish_approach_speed;
         }
@@ -840,6 +894,75 @@ static void bringup_init_peer_link(uint32_t now_ms)
         &g_peer_link, &config, now_ms);
     if (!g_peer_link_ready) {
         g_peer_link_fault = 1U;
+    }
+}
+
+static void bringup_process_ball_command(void)
+{
+    const uint32_t mailbox = g_BRINGUP_BallCommandMailbox;
+    const uint16_t request_id = (uint16_t)(mailbox >> 16U);
+    const int16_t command = (int16_t)(uint16_t)mailbox;
+    Device_PeerLink_SendResult result;
+
+    if (mailbox == 0U) {
+        g_ball_command_active_word = 0U;
+        g_ball_command_attempt_count = 0U;
+        g_ball_command_terminal = false;
+        g_BRINGUP_BallCommandStatus = TASK_BRINGUP_BALL_COMMAND_IDLE;
+        g_BRINGUP_BallCommandQueueAttempts = 0U;
+        return;
+    }
+    if (mailbox != g_ball_command_active_word) {
+        g_ball_command_active_word = mailbox;
+        g_ball_command_attempt_count = 0U;
+        g_ball_command_terminal = false;
+        g_BRINGUP_BallCommandQueueAttempts = 0U;
+    }
+    if (g_ball_command_terminal) {
+        return;
+    }
+    if ((request_id == 0U) ||
+        ((command != INT16_MIN) &&
+         ((command < -TEMPLATE_BRINGUP_BALL_TARGET_ABS_MAX_0P1_MM) ||
+          (command > TEMPLATE_BRINGUP_BALL_TARGET_ABS_MAX_0P1_MM)))) {
+        g_BRINGUP_BallCommandStatus = TASK_BRINGUP_BALL_COMMAND_INVALID;
+        g_ball_command_terminal = true;
+        return;
+    }
+    if (!g_peer_link_ready || !g_peer_link.status.online) {
+        g_BRINGUP_BallCommandStatus = TASK_BRINGUP_BALL_COMMAND_WAIT_LINK;
+        return;
+    }
+
+    result = (command == INT16_MIN) ?
+        Device_PeerLink_SendBallStop(&g_peer_link) :
+        Device_PeerLink_SendBallTarget(&g_peer_link, (int32_t)command);
+    ++g_ball_command_attempt_count;
+    g_BRINGUP_BallCommandQueueAttempts = g_ball_command_attempt_count;
+    if (result == DEVICE_PEER_LINK_SEND_QUEUED) {
+        g_BRINGUP_BallCommandLastQueued = mailbox;
+        g_BRINGUP_BallCommandStatus = TASK_BRINGUP_BALL_COMMAND_QUEUED;
+        g_ball_command_terminal = true;
+    }
+    else if (result == DEVICE_PEER_LINK_SEND_BUSY) {
+        if (g_ball_command_attempt_count >=
+                TEMPLATE_PEER_LINK_BALL_COMMAND_QUEUE_ATTEMPT_LIMIT) {
+            g_BRINGUP_BallCommandStatus =
+                TASK_BRINGUP_BALL_COMMAND_BUSY_EXHAUSTED;
+            g_ball_command_terminal = true;
+        }
+        else {
+            g_BRINGUP_BallCommandStatus =
+                TASK_BRINGUP_BALL_COMMAND_BUSY_RETRY;
+        }
+    }
+    else if (result == DEVICE_PEER_LINK_SEND_INVALID_ARGUMENT) {
+        g_BRINGUP_BallCommandStatus = TASK_BRINGUP_BALL_COMMAND_INVALID;
+        g_ball_command_terminal = true;
+    }
+    else {
+        g_BRINGUP_BallCommandStatus = TASK_BRINGUP_BALL_COMMAND_SEND_ERROR;
+        g_ball_command_terminal = true;
     }
 }
 
@@ -1166,14 +1289,6 @@ static bool bringup_init_devices(void)
         .require_buffered_tx = true,
         .require_buffered_rx = true,
     };
-    const Device_Serial_Config pendulum_imu_serial_config = {
-        .transport_index = BRINGUP_PENDULUM_IMU_TRANSPORT_INDEX,
-        .expected_baud_rate = BRINGUP_UART_BAUD,
-        .minimum_tx_capacity = 0U,
-        .minimum_rx_capacity = 3U * 11U,
-        .require_buffered_tx = false,
-        .require_buffered_rx = true,
-    };
     const Device_ICM45686_SPI_Config imu_transport = {
         .transport_index = BRINGUP_ICM45686_SPI_INDEX,
         .chip_select_index = 0U,
@@ -1251,12 +1366,6 @@ static bool bringup_init_devices(void)
      * before communication. The Task submits the one-shot start command later
      * without blocking this initialization path. */
     g_grayscale_initialized_ms = bringup_now_ms();
-    /* The moving-link WIT IMU is diagnostic-only. A missing or misconfigured
-     * module must not inhibit chassis start, navigation, or planned stopping. */
-    g_pendulum_imu_ready =
-        Device_Serial_Init(
-            &g_pendulum_imu_serial, &pendulum_imu_serial_config) &&
-        Device_JY61P_Init(&g_pendulum_imu, NULL);
     if (!Device_LineTracking_DefaultRawConfig(
             DEVICE_YAHBOOM_TRACK_CHANNEL_COUNT, 0U,
             DEVICE_YAHBOOM_TRACK_ADC_FULL_SCALE, &line_config)) {
@@ -1329,15 +1438,15 @@ static bool bringup_init_devices(void)
             (TEMPLATE_BRINGUP_ITEM4_AB_CRUISE_SPEED_MM_PER_SECOND <= 0.0F) ||
             (TEMPLATE_BRINGUP_ITEM4_AB_CRUISE_SPEED_MM_PER_SECOND >
                 TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND) ||
-            (TEMPLATE_BRINGUP_ITEM4_AB_ACCELERATION_MM_PER_SECOND2 <= 0.0F) ||
-            (TEMPLATE_BRINGUP_ITEM4_AB_DECELERATION_MM_PER_SECOND2 <= 0.0F) ||
+            (TEMPLATE_BRINGUP_SHARED_ACCELERATION_MM_PER_SECOND2 <= 0.0F) ||
+            (TEMPLATE_BRINGUP_SHARED_DECELERATION_MM_PER_SECOND2 <= 0.0F) ||
+            (TEMPLATE_BRINGUP_SHARED_JERK_MM_PER_SECOND3 <= 0.0F) ||
+            (TEMPLATE_BRINGUP_SHARED_ACCELERATION_FEEDBACK_GAIN < 0.0F) ||
             (TEMPLATE_BRINGUP_ITEM4_PASS_B_RUNOUT_MM <=
                 TEMPLATE_CAR_PROFILE_GUARD_DISTANCE_MM) ||
             (TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND <= 0.0F) ||
             (TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND >
                 TEMPLATE_CAR_SPEED_MAXIMUM_TARGET_MM_PER_SECOND) ||
-            (TEMPLATE_BRINGUP_ITEM56_LAP_ACCELERATION_MM_PER_SECOND2 <= 0.0F) ||
-            (TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2 <= 0.0F) ||
             (TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND <=
                 0.0F) ||
             (TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND >
@@ -1353,7 +1462,11 @@ static bool bringup_init_devices(void)
                 ((TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND *
                     TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND) /
                     (2.0F *
-                        TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2))) >=
+                        TEMPLATE_BRINGUP_SHARED_DECELERATION_MM_PER_SECOND2)) +
+                (TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND *
+                    TEMPLATE_BRINGUP_SHARED_DECELERATION_MM_PER_SECOND2) /
+                    (2.0F *
+                        TEMPLATE_BRINGUP_SHARED_JERK_MM_PER_SECOND3)) >=
                 TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM) ||
             !Mode_Car_AnalogTracking_Init(
                 &g_tracking_controller, &tracking_config)) {
@@ -1591,37 +1704,39 @@ static void bringup_latch_competition_time(
     }
 }
 
-static bool bringup_pause_tracking(uint32_t now_ms, float dt_seconds)
+static bool bringup_hold_zero_speed(
+    float dt_seconds,
+    const Device_Encoder_Sample *speed_a,
+    const Device_Encoder_Sample *speed_b)
 {
-    const Mode_Car_AnalogTrackingInput tracking_input = {
-        .time = {
-            .now_ms = now_ms,
-            .dt_seconds = (dt_seconds > 0.0F) ? dt_seconds :
-                (float)BRINGUP_TASK_PERIOD_MS * 0.001F,
-        },
-        .base_drive = 0.0F,
-        .analog_error = 0.0F,
-        .confidence = 0.0F,
-        .line_valid = false,
-        .line_lost = true,
-        .intersection = false,
-    };
-    Mode_Car_Output stop_output;
+    Mode_Car_SpeedControllerOutput speed_output;
 
     g_target_left_speed = 0.0F;
     g_target_right_speed = 0.0F;
     g_line_left_speed_correction = 0.0F;
     g_line_right_speed_correction = 0.0F;
     g_line_speed_correction_valid = false;
-    Mode_Car_SpeedController_Reset(&g_speed_controller);
-    if (!Mode_Car_AnalogTracking_Update(
-            &g_tracking_controller, &tracking_input, &stop_output)) {
-        g_BRINGUP_Fault = 10U;
+    g_item56_line_half_difference_mm_per_second = 0.0F;
+    if (!Mode_Car_SpeedController_Update(
+            &g_speed_controller,
+            &(Mode_Car_SpeedControllerInput){
+                .dt_seconds = dt_seconds,
+                .target_left_speed = 0.0F,
+                .target_right_speed = 0.0F,
+                .measured_left_speed =
+                    speed_a->speed_distance_per_second,
+                .measured_right_speed =
+                    speed_b->speed_distance_per_second,
+            },
+            &speed_output)) {
+        g_BRINGUP_Fault = 9U;
         return false;
     }
-    if ((bringup_command_motor(&g_motor[0], 0) !=
+    if ((bringup_command_motor(&g_motor[0],
+            (int32_t)(speed_output.left_effort_percent * 100.0F)) !=
             DEVICE_MOTOR_RESULT_OK) ||
-        (bringup_command_motor(&g_motor[1], 0) !=
+        (bringup_command_motor(&g_motor[1],
+            (int32_t)(speed_output.right_effort_percent * 100.0F)) !=
             DEVICE_MOTOR_RESULT_OK)) {
         g_BRINGUP_Fault = 3U;
         return false;
@@ -1684,12 +1799,20 @@ static void bringup_update_tracking(
         if (profile_output.goal_valid) {
             g_stop_requested = true;
         }
-        (void)bringup_pause_tracking(now_ms, dt_seconds);
-        if (!g_profile_zero_candidate) {
+        if (!bringup_hold_zero_speed(dt_seconds, speed_a, speed_b)) {
+            bringup_stop_motors();
+            return;
+        }
+        if ((fabsf(speed_a->speed_distance_per_second) >
+                TEMPLATE_CAR_PROFILE_STOPPED_SPEED_THRESHOLD_MM_PER_SECOND) ||
+            (fabsf(speed_b->speed_distance_per_second) >
+                TEMPLATE_CAR_PROFILE_STOPPED_SPEED_THRESHOLD_MM_PER_SECOND)) {
+            g_profile_zero_candidate = false;
+        } else if (!g_profile_zero_candidate) {
             g_profile_zero_candidate = true;
             g_profile_zero_since_ms = now_ms;
         } else if ((uint32_t)(now_ms - g_profile_zero_since_ms) >=
-            (uint32_t)(TEMPLATE_CAR_BRAKE_STABLE_TIME_SECONDS * 1000.0F)) {
+            TEMPLATE_BRINGUP_ZERO_SPEED_HOLD_STABLE_MS) {
             bringup_finish_planned_stop();
         }
         return;
@@ -2009,16 +2132,108 @@ static void bringup_update_pendulum_imu(uint32_t now_ms)
     Device_JY61P_UpdateOnline(&g_pendulum_imu, now_ms);
 }
 
+/* Capture every fresh DBG frame while the F407 manual calibration is in
+ * phase 2. The 2500 x 16-byte static buffer fits SRAM bank 0 and provides
+ * about 50 seconds at the nominal 50 Hz debug rate. */
+static void bringup_record_rod_calibration(uint32_t now_ms)
+{
+    Device_PeerLink_DebugTelemetry f407_debug = {0};
+    Device_JY61P_Snapshot pendulum_imu = {0};
+    uint32_t euler_age_ms;
+
+    if (!g_peer_link_ready ||
+        !Device_PeerLink_GetRemoteDebugTelemetry(
+            &g_peer_link, now_ms, BRINGUP_F407_DEBUG_MAX_AGE_MS,
+            &f407_debug) ||
+        (f407_debug.received_at_ms == g_rod_calibration_last_debug_ms)) {
+        return;
+    }
+    g_rod_calibration_last_debug_ms = f407_debug.received_at_ms;
+
+    if (f407_debug.control_phase == 0U) {
+        if (g_BRINGUP_RodCalibrationState ==
+                TASK_BRINGUP_ROD_CALIBRATION_RECORDING) {
+            g_BRINGUP_RodCalibrationState =
+                TASK_BRINGUP_ROD_CALIBRATION_COMPLETE;
+        }
+        g_rod_calibration_last_phase = 0U;
+        g_rod_calibration_samples_at_point = 0U;
+        return;
+    }
+
+    /* Manual calibration starts directly on the first fresh phase-2 frame.
+     * This avoids losing a short phase-1 arm pulse on the 50 Hz debug link. */
+    if ((g_rod_calibration_last_phase != 2U) &&
+        (f407_debug.control_phase == 2U)) {
+        g_BRINGUP_RodCalibrationCount = 0U;
+        g_BRINGUP_RodCalibrationPointCount = 1U;
+        g_BRINGUP_RodCalibrationInvalidEulerCount = 0U;
+        g_BRINGUP_RodCalibrationState =
+            TASK_BRINGUP_ROD_CALIBRATION_RECORDING;
+        g_rod_calibration_samples_at_point = 0U;
+    }
+    if (g_BRINGUP_RodCalibrationState !=
+            TASK_BRINGUP_ROD_CALIBRATION_RECORDING) {
+        g_rod_calibration_last_phase = f407_debug.control_phase;
+        return;
+    }
+
+    g_rod_calibration_last_phase = f407_debug.control_phase;
+
+    if (f407_debug.control_phase != 2U) {
+        return;
+    }
+    if (!g_pendulum_imu_ready ||
+        !Device_JY61P_GetSnapshot(&g_pendulum_imu, &pendulum_imu) ||
+        !pendulum_imu.has_euler ||
+        (pendulum_imu.euler_frame_count == 0U)) {
+        ++g_BRINGUP_RodCalibrationInvalidEulerCount;
+        return;
+    }
+    euler_age_ms = (uint32_t)(now_ms - pendulum_imu.last_euler_frame_ms);
+    if ((euler_age_ms > TEMPLATE_BRINGUP_JY61P_ANGLE_TIMEOUT_MS) ||
+        !isfinite(pendulum_imu.euler_deg[0]) ||
+        !isfinite(pendulum_imu.euler_deg[1]) ||
+        !isfinite(pendulum_imu.euler_deg[2]) ||
+        (fabsf(pendulum_imu.euler_deg[0]) > 180.0F) ||
+        (fabsf(pendulum_imu.euler_deg[1]) > 180.0F) ||
+        (fabsf(pendulum_imu.euler_deg[2]) > 180.0F)) {
+        ++g_BRINGUP_RodCalibrationInvalidEulerCount;
+        return;
+    }
+    if (g_BRINGUP_RodCalibrationCount >=
+            TASK_BRINGUP_ROD_CALIBRATION_CAPACITY) {
+        g_BRINGUP_RodCalibrationState =
+            TASK_BRINGUP_ROD_CALIBRATION_FULL;
+        return;
+    }
+
+    {
+        volatile Task_BringupRodCalibrationSample *sample =
+            &g_BRINGUP_RodCalibrationSamples[
+                g_BRINGUP_RodCalibrationCount];
+
+        sample->sample_ms = now_ms;
+        sample->motor_target_raw = f407_debug.motor_target_raw;
+        sample->motor_feedback_raw = f407_debug.motor_feedback_raw;
+        sample->jy61_euler_centi_deg[0] =
+            (int16_t)(pendulum_imu.euler_deg[0] * 100.0F);
+        sample->jy61_euler_centi_deg[1] =
+            (int16_t)(pendulum_imu.euler_deg[1] * 100.0F);
+        sample->jy61_euler_centi_deg[2] =
+            (int16_t)(pendulum_imu.euler_deg[2] * 100.0F);
+    }
+    ++g_BRINGUP_RodCalibrationCount;
+    ++g_rod_calibration_samples_at_point;
+}
+
 static void bringup_send_firewater(
     uint32_t now_ms,
     const Device_Encoder_Sample *speed_a,
     const Device_Encoder_Sample *speed_b,
-    float yaw_deg,
-    float chassis_pitch_deg,
-    bool chassis_pitch_valid)
+    float yaw_deg)
 {
     char line[BRINGUP_TELEMETRY_LINE_CAPACITY];
-    Device_JY61P_Snapshot pendulum_imu = {0};
     Device_YahboomTrack_Snapshot grayscale = {0};
     Device_PeerLink_DebugTelemetry f407_debug = {0};
     const Mode_Car_LinearProfileOutput *profile = &g_speed_profile.output;
@@ -2029,11 +2244,10 @@ static void bringup_send_firewater(
     int32_t line_error_milli = bringup_line_sample_fresh(now_ms)
         ? (int32_t)(g_line_sample.error * 1000.0F) : 0;
     int32_t yaw_centi = (int32_t)(yaw_deg * 100.0F);
-    uint32_t pendulum_angle_age_ms =
-        BRINGUP_PENDULUM_IMU_INVALID_AGE_MS;
-    const bool pendulum_snapshot_valid = g_pendulum_imu_ready &&
-        Device_JY61P_GetSnapshot(&g_pendulum_imu, &pendulum_imu) &&
-        pendulum_imu.has_euler && (pendulum_imu.euler_frame_count > 0U);
+    int32_t measured_acceleration_centi = (int32_t)(
+        profile->measured_acceleration_mm_per_second2 * 100.0F);
+    int32_t feedback_correction_centi = (int32_t)(
+        profile->acceleration_feedback_correction_mm_per_second2 * 100.0F);
     const bool grayscale_snapshot_fresh =
         Device_YahboomTrack_GetLatest(&g_grayscale, &grayscale) &&
             Device_YahboomTrack_SnapshotFresh(
@@ -2042,34 +2256,11 @@ static void bringup_send_firewater(
         Device_PeerLink_GetRemoteDebugTelemetry(
             &g_peer_link, now_ms, BRINGUP_F407_DEBUG_MAX_AGE_MS,
             &f407_debug);
-    bool absolute_pitch_valid = false;
-    int32_t absolute_pitch_centi = 0;
     const char *line_error_sign = "";
     const char *yaw_sign = "";
-    const char *absolute_pitch_sign = "";
+    const char *measured_acceleration_sign = "";
+    const char *feedback_correction_sign = "";
     int length;
-
-    if (pendulum_snapshot_valid) {
-        const uint32_t age_ms =
-            (uint32_t)(now_ms - pendulum_imu.last_euler_frame_ms);
-
-        const float absolute_pitch_deg =
-            chassis_pitch_deg + pendulum_imu.euler_deg[1];
-
-        absolute_pitch_valid = chassis_pitch_valid &&
-            (age_ms <= TEMPLATE_BRINGUP_JY61P_ANGLE_TIMEOUT_MS) &&
-            isfinite(chassis_pitch_deg) &&
-            isfinite(pendulum_imu.euler_deg[1]) &&
-            isfinite(absolute_pitch_deg) &&
-            (fabsf(absolute_pitch_deg) <= 360.0F);
-        if (absolute_pitch_valid) {
-            /* User-defined calibration convention: the JY61P Pitch is the
-             * rod's relative term, so CH12 is the sum with chassis Pitch. */
-            absolute_pitch_centi =
-                (int32_t)(absolute_pitch_deg * 100.0F);
-            pendulum_angle_age_ms = age_ms;
-        }
-    }
 
     if (line_error_milli < 0) {
         line_error_sign = "-";
@@ -2079,9 +2270,13 @@ static void bringup_send_firewater(
         yaw_sign = "-";
         yaw_centi = -yaw_centi;
     }
-    if (absolute_pitch_centi < 0) {
-        absolute_pitch_sign = "-";
-        absolute_pitch_centi = -absolute_pitch_centi;
+    if (measured_acceleration_centi < 0) {
+        measured_acceleration_sign = "-";
+        measured_acceleration_centi = -measured_acceleration_centi;
+    }
+    if (feedback_correction_centi < 0) {
+        feedback_correction_sign = "-";
+        feedback_correction_centi = -feedback_correction_centi;
     }
     if (!grayscale_snapshot_fresh) {
         grayscale = (Device_YahboomTrack_Snapshot){0};
@@ -2093,11 +2288,12 @@ static void bringup_send_firewater(
     /* Channel order: route distance, measured wheel A/B speed, target wheel
      * A/B speed, profile reference speed/acceleration, remaining distance,
      * braking trigger distance, chassis yaw, line error, profile state,
-     * absolute rod Pitch (ICM45686 + JY61P), JY61P angle age in ms, then the
-     * fresh Yahboom raw ADC values x1..x8, then F407 DBG CH22..CH31. */
+     * measured mean-wheel acceleration and the actually applied acceleration
+     * feedback correction, then fresh Yahboom raw ADC values x1..x8 and
+     * F407 DBG CH22..CH31. */
     length = snprintf(line, sizeof(line),
         "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%s%ld.%02ld,"
-        "%s%ld.%03ld,%u,%s%ld.%02ld,%lu,"
+        "%s%ld.%03ld,%u,%s%ld.%02ld,%s%ld.%02ld,"
         "%u,%u,%u,%u,%u,%u,%u,%u,"
         "%ld,%ld,%ld,%u,%u,%ld,%ld,%ld,%u,%u\n",
         (long)route_distance_mm,
@@ -2116,10 +2312,12 @@ static void bringup_send_firewater(
         (long)(line_error_milli / 1000),
         (long)(line_error_milli % 1000),
         (unsigned)profile->state,
-        absolute_pitch_sign,
-        (long)(absolute_pitch_centi / 100),
-        (long)(absolute_pitch_centi % 100),
-        (unsigned long)pendulum_angle_age_ms,
+        measured_acceleration_sign,
+        (long)(measured_acceleration_centi / 100),
+        (long)(measured_acceleration_centi % 100),
+        feedback_correction_sign,
+        (long)(feedback_correction_centi / 100),
+        (long)(feedback_correction_centi % 100),
         (unsigned)grayscale.adc[0],
         (unsigned)grayscale.adc[1],
         (unsigned)grayscale.adc[2],
@@ -2178,6 +2376,7 @@ static void Task_BringupChassis(void *argument)
             !Device_PeerLink_Step(&g_peer_link, now_ms)) {
             g_peer_link_fault = 2U;
         }
+        bringup_process_ball_command();
         if (g_devices_ready) {
             Device_Encoder_Sample sample_a = {0};
             Device_Encoder_Sample sample_b = {0};
@@ -2218,6 +2417,7 @@ static void Task_BringupChassis(void *argument)
             bringup_update_grayscale(now_ms);
             bringup_update_line_sample();
             bringup_update_pendulum_imu(now_ms);
+            bringup_record_rod_calibration(now_ms);
             display_imu_valid = imu_navigation_valid;
 
             if (!Device_KeyInput_Update(&g_start_key, now_ms)) {
@@ -2241,7 +2441,10 @@ static void Task_BringupChassis(void *argument)
                     break;
                 }
                 if (key_event == DEVICE_KEY_EVENT_LONG_PRESS) {
-                    if (!g_tracking_active) {
+                    if (!g_tracking_active &&
+                        !((g_competition_mode ==
+                                BRINGUP_COMPETITION_MODE_ITEM_3) &&
+                            g_competition_mode_confirmed)) {
                         g_competition_mode =
                             bringup_next_competition_mode(
                                 g_competition_mode);
@@ -2263,9 +2466,14 @@ static void Task_BringupChassis(void *argument)
                 }
                 if (g_competition_mode ==
                         BRINGUP_COMPETITION_MODE_ITEM_3) {
-                    g_competition_mode_confirmed =
-                        g_devices_ready && (g_BRINGUP_Fault == 0U) &&
-                        g_peer_link_ready && g_peer_link.status.online;
+                    if (g_competition_mode_confirmed) {
+                        g_competition_mode_confirmed = false;
+                    }
+                    else if (g_devices_ready && (g_BRINGUP_Fault == 0U) &&
+                             g_peer_link_ready &&
+                             g_peer_link.status.online) {
+                        g_competition_mode_confirmed = true;
+                    }
                     g_display_status_line = 3U;
                     continue;
                 }
@@ -2307,8 +2515,7 @@ static void Task_BringupChassis(void *argument)
             if (telemetry_due) {
                 last_telemetry_ms = now_ms;
                 bringup_send_firewater(
-                    now_ms, &sample_a, &sample_b, yaw_deg,
-                    imu_snapshot.pitch_deg, imu_valid);
+                    now_ms, &sample_a, &sample_b, yaw_deg);
             }
         }
         if (display_tracking_previous && !g_tracking_active) {

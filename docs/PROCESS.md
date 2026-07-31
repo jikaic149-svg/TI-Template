@@ -1,5 +1,13 @@
 # 工程变更记录
 
+## 2026-08-01：M3短按KEY改为启停滚球任务
+
+- 修改原因：旧逻辑在M3短按时只把“已确认”永久置真，第二次短按无法产生结束事件，F407与Maix均不知道按键启停状态。
+- 最终决策：M3第一次短按在设备、故障和PeerLink门控通过后提交`BTG=0 mm`；第二次短按提交`BST`。两者复用现有有界BUSY重试与独立序号；M3活动期间禁止长按切换赛题，其他赛题按键逻辑不变。
+- 涉及文件：`Task/task_bringup_chassis.c`及本记录；未增加Task、动态内存、协议类型或周期。
+- 验证与部署：G3519 Bring-up Debug clean-first链接成功，FLASH/SRAM_BANK0为`85608/19280 B`；指定DAPLink完成编程和复位，按用户要求未做额外readback/verify。
+- 待确认：TFT黄色M3第一次短按应变绿并启动滚球，第二次短按应变黄并结束滚球。
+
 ## 2026-07-29：回退 G3519 Bring-up 边缘权重与循迹 Kp
 
 - 修改原因：用户实车观察到边缘灰度权重和循迹比例增益过大，强偏差时纠偏过猛。
@@ -2025,3 +2033,196 @@
 - 已知限制与待确认：左右修正的数学均值为零不等于实车停点绝对不变；轮速跟随误差和
   轮胎打滑仍可能影响末段里程，须用新VOFA确认最终相对航向、横杠后实走距离及是否出现
   低速过度纠偏。
+
+## 2026-07-31：G3519增加独立滚球目标与停止命令
+
+- 修改原因：用户批准由MCP经G3519向F407设置任意球位目标和停止，同时要求不新增Task、
+  不改变M3按键语义、底盘模式或现有限幅。
+- 最终决策：新增`BTG=2,<target_0p1mm>`和`BST=2`；协议目标域为`±1250`，G3519产品/调试
+  入口限制为`±1200`。BST语义固定为F407执行`0 A -> Disable`。两类命令分别使用独立
+  16位序号，无ACK。现有10 ms Bring-up Task在PeerLink Step后消费单个32位原子调试邮箱；
+  高16位为非零请求号，低16位为有符号目标或`INT16_MIN`停止码。BTG不隐式启动闭环。
+- 涉及文件：`Device/Communication/PeerLink/`、`Task/task_bringup_chassis.[ch]`、
+  `config/core_config.h`、PeerLink/Task README、PeerLink主机测试和本记录；未修改Task周期、
+  M3按键、底盘模式、BSP、SysConfig、引脚或底盘电机限幅。
+- 验证方式和结果：全套host测试通过；PeerLink新增测试覆盖BTG正负协议边界、BST、独立序号、
+  BUSY不推进序号和越界拒绝。67个ARM源文件严格编译通过；G3519 Bring-up Debug/Release
+  完整链接通过，FLASH为`84120/79656 B`，SRAM_BANK0为`19312/19296 B`。
+- 已知限制：QUEUED只证明G3519本地UART入队，不是F407执行ACK；连续3次BUSY后停止尝试并
+  显式报告`BUSY_EXHAUSTED`，必须换请求号重提。本轮未烧录、未连接硬件、未验证双端BTG/BST
+  抓帧或球位闭环；F407仍须先由其本地KEY启动且视觉有效才接受BTG。
+- 待确认事项：双端部署后先在中心附近验证目标符号、范围拒绝、STOP失能和无刷既有限幅，
+  再逐步扩大到`±120.0 mm`端部安全余量。
+
+## 2026-07-31：赛题mode同步至F407与视觉
+
+- 修改原因：用户要求把G3519当前选择的赛题mode同步给另一块F407和Maix视觉程序。
+- 最终决策：在现有`CAR`状态尾部追加`competition_mode`，直接取既有
+  `g_competition_mode`，只允许`2..6`。mode独立于CAR物理量`valid`，供F407和视觉侧
+  显示、诊断，不触发滚球控制、产品模式切换或其他启动行为；未新增Task、ACK、重发或
+  状态机。
+- 涉及文件：`Device/Communication/PeerLink/device_peer_link.[ch]`、PeerLink README、
+  `Task/task_bringup_chassis.c`、Task README、PeerLink主机测试和本记录；未修改BSP、
+  SysConfig、引脚或Task周期。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过；PeerLink主机测试和
+  ARM严格编译通过，G3519 Bring-up Debug/Release完整链接通过，BIN分别为
+  `83600/79488 B`。用户明确要求烧录后，显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug `83600 B`；
+  从主Flash `0x00000000`按镜像长度完整回读，源BIN与回读SHA-256均为
+  `E9736C8CB3D455C68906947CF9E228AD77D944C4868660D8B383B2C2BE12BD55`，随后执行
+  `reset run`。
+- 已知限制与待确认：本轮只烧录并回读校验了G3519；F407与视觉端未烧录/部署，双端UART
+  `CAR`实收、F407的1500 ms新鲜度处理以及`VST`到Maix的mode显示仍需联机实物验证。
+
+## 2026-07-31：mode同步实物分段验证（G3519侧未连通）
+
+- 修改原因：用户要求立即验证G3519→F407→Maix的mode实物链路。
+- 最终状态：F407与Maix已部署当前版本，但F407运行约4分钟后PeerLink仍为
+  `heartbeat_rx_count=0`、`car_state_rx_count=0`；因此Maix从真实VST收到`mode=0`。
+  G3519当前未向F407提供可用串口帧。
+- 验证方式和结果：G3519工程Doctor按本地固定配置检查指定DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`，明确报告其父设备
+  `VID_0D28&PID_0204`不在场。Windows仅有另一个`VID_0D28&PID_4001/COM5`，以
+  115200 8N1独占采样2.5 s为0字节。本轮未重新烧录或复位G3519。
+- 已知限制与待确认：上一条记录只证明当时G3519镜像写入及回读正确；本次缺少目标DAPLink、
+  G3519运行串口和八字段CAR实收，不能把完整链路写成通过。须重新连接指定DAPLink/目标板电源，
+  并确认G3519 TX、F407 PA10 RX与共地后继续验收。
+
+## 2026-07-31：停用JY61P初始化并部署G3519
+
+- 修改原因：用户明确要求取消JY61P初始化并立即烧录。
+- 最终决策：Bring-up初始化路径不再初始化JY61P专用`Device_Serial`，也不调用
+  `Device_JY61P_Init`；`g_pendulum_imu_ready`保持默认`false`，现有串口消费、欧拉角解析、
+  杆角采集和VOFA角度输出通过原安全门跳过。JY61P源码、构建选项、UART0 SysConfig资源和
+  后续恢复入口均保留，未修改底盘控制、Task周期、BSP、SysConfig或引脚。
+- 涉及文件：`Task/task_bringup_chassis.c`、`Task/README.md`和本记录。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构和差异检查，组件结果命中
+  现有验证缓存；显式构建`g3519-bringup-debug`确认当前产物已是最新。使用DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug `82088 B`，从
+  主Flash `0x00000000`按镜像长度完整回读，源BIN与回读SHA-256均为
+  `D1928D5490AB35D618AD2452B7056DDE58389F57F45CB635A4F1D3B3F7588B87`，随后执行
+  `reset run`。
+- 已知限制与待确认：烧录和回读只证明镜像正确部署；未读取运行期变量或观察JY61P物理串口，
+  不表述为实物功能验证。恢复JY61P时须同时恢复串口与Device初始化。
+
+## 2026-07-31：M4/M5/M6纵向加速度平滑与轮速加速度环
+
+- 修改原因：用户要求缓和滚球赛题的起步、停车和弯道纵向加速度，以便F407使用现有
+  ICM加速度前馈补偿，同时明确要求保留M4与M5/M6停车位置。
+- 最终决策：线性速度规划器增加独立加减速限跃度，并由左右轮平均实测速度差分、80 ms
+  一阶低通形成纵向加速度反馈，M4/M5/M6启用`0.15`比例修正；制动包络使用分段S曲线精确
+  计算，并包含正加速度回落到零的限跃度过渡。M4保持320 mm/s巡航和B后50 mm目标，使用
+  对称100 mm/s²及400 mm/s³；M5/M6保持234 mm/s巡航、110 mm/s末段速度和横杠后180 mm目标，使用对称
+  80 mm/s²及320 mm/s³，直道和圆弧切点不改变纵向速度。固定32列VOFA恢复为唯一输出，
+  CH12改为保留两位小数的滤波实测纵向加速度；CH13改为闭环相对相同限跃度开环的实际
+  加速度修正量，负值表示闭环压低参考加速度，CH6减CH12仍可得到加速度误差。
+- 涉及文件：`Mode/Car/Control/mode_car_speed_profile.c`、
+  `Mode/Car/include/mode_car_control.h`、`Mode/Car/README.md`、`Task/task_bringup_chassis.[ch]`、
+  `Task/README.md`、`config/core_config.h`、SpeedProfile主机测试和本记录；未修改Task周期、
+  优先级、BSP、SysConfig、引脚或JY61P停用状态。
+- 验证方式和结果：SpeedProfile主机测试覆盖加速度限跃度、轮速加速度反馈、高实测轮速
+  不延后制动、实际闭环修正量、M4在8 s内过B、M5/M6长直道零计划加速度及两类停车目标保护带。
+  `tools/project.ps1 -Action Verify -Scope Auto`通过架构检查、差异检查、Navigation/SpeedProfile
+  主机测试、ARM严格编译及映射到的完整链接。G3519 Bring-up Debug/Release完整链接通过，
+  当前FLASH分别为85064/80648 B，SRAM_BANK0分别为19280/19264 B。
+- 烧录结果：用户明确允许烧录后，显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug 85064 B；从主Flash
+  `0x00000000`完整回读85064 B，源BIN与回读SHA-256均为
+  `C96383E2E24803E94F9AD1279E254DBD89F232A471779C5FC5F0686BFBD082EF`。回读后曾按先前要求保持
+  `reset halt`；用户随后明确要求烧录完成后重启，已使用同一探针执行`reset run`。
+- 已知限制与待确认：固件已经启动，但尚未取得新版VOFA实测曲线。共享35 mm保护距离会让理想无惯性
+  仿真的参考速度在目标前约35 mm归零，实际停车依赖底盘惯性补足该保护距离；M4的B后50 mm
+  和M5/M6横杠后180 mm仍须在实车上核对，尤其要观察轮胎打滑、速度内环滞后及停车点误差。
+  当前`.vscode/launch.json`的G3519配置仍指向不含该产品Task的普通`MSPM0G3519`目标，并会在
+  launch时烧录和运行；本轮未执行该配置，实际只构建了`MSPM0G3519-Bringup` Debug/Release。
+
+## 2026-07-31：M4固定起步规划结束后切换F407本地BMI088前馈
+
+- 修改原因：最新两次M4 VOFA中，发车固定段CH22=`100 mm/s²`、CH23=`-117 mdeg`正常，
+  但3450 ms后的减速段CH6约为`-95～-99 mm/s²`时CH22/CH23始终为0。根因是G3519继续发送
+  `plan_valid=1, acceleration=0`，压住F407已有的本地BMI088前馈，不是BMI088增益不足。修正后
+  新VOFA确认运行3450 ms后BMI088已接管，但停车约40 ms后CH22从`-343 mm/s²`突变为0，进一步
+  定位到停车态重新发送的有效零规划仍会过早屏蔽停车残余冲击。
+- 最终决策：否决M4全程`plan_valid=1`。M4运行中仅在`elapsed_ms<=3450`时发送有效规划：
+  0～600 ms为0，600～850 ms按`400 mm/s³`升至`100 mm/s²`，保持至3200 ms，再于3450 ms前
+  按相同jerk降至0。旧“未运行或停车时发送有效零规划抑制静止噪声”方向也已否决；发车前、
+  3450 ms后及停车后全部恢复八字段CAR，由F407按现有`0.20`增益使用本地BMI088。M2/M3/M5/M6
+  不变。
+- 涉及文件：`Task/task_bringup_chassis.c`、`config/core_config.h`、PeerLink/Task说明和本记录；
+  未修改F407代码、Task周期、BSP、SysConfig、引脚、按键语义或电机保护。
+- 验证与部署：`tools/project.ps1 -Action Verify -Scope Auto`通过架构/差异检查、ARM严格编译和
+  Bring-up Debug/Release完整链接；FLASH分别为`85440/81032 B`，SRAM_BANK0分别为
+  `19280/19272 B`。使用指定DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入正确Bring-up Debug `85440 B`；从
+  主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `9BE753A2D7532E700994A62E001CAC2E5DB503BFC6DFABC77C55F90B02E01263`，随后执行`reset run`。
+  未按KEY或发送启动命令，F407代码和固件未修改。
+- 已知限制与待确认：烧录和回读只证明正确镜像已部署；须采集新版32列VOFA，确认3450 ms前
+  CH22/CH23仍跟随固定规划，3450 ms后及停车后的CH22/CH23持续响应BMI088，并核对停车球位误差
+  和M4仍在8 s内通过B。F407未处于加速度补偿phase或BMI088失效时仍会按其现有安全门停止前馈。
+
+## 2026-07-31：M4固定起步后继续下发速度规划器加速度
+
+- 修改原因：最新VOFA确认纯BMI088能够响应停车冲击，但减速段幅值显著小于M4已规划的
+  `-99 mm/s²`；F407三状态融合需要3450 ms后的有符号规划量作为预测基准。
+- 最终决策：M4的0～3450 ms固定起步规划保持不变；3450 ms后且循迹有效时，CAR规划字段改为
+  直接发送同一jerk限速速度规划器的`reference_acceleration_mm_per_second2`，包含减速负值。
+  循迹结束或规划器无效时继续发送`plan_valid=0`，使F407回退纯BMI088。未改变十字段CAR格式、
+  M4的`100 mm/s²`与`400 mm/s³`参数、Task周期或停车逻辑。
+- 涉及文件：`Task/task_bringup_chassis.c`及本记录；未修改BSP、SysConfig、ISR/DMA、引脚、按键
+  语义或电机保护。
+- 验证与部署：全套Host GCC测试PASS；Bring-up Debug/Release clean-first完整链接通过，FLASH/
+  SRAM_BANK0分别为`85488/19280 B`和`81048/19272 B`。使用指定DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入Bring-up Debug BIN 85488 B，从
+  `0x00000000`完整回读；源BIN与回读SHA-256均为
+  `06154F90BBD2EA7BD3C5344F1A405A357AA3E820920F20871D50A48CBB9162A3`，随后`reset run`。
+  未按KEY或发送启动命令。
+- 已知限制与待确认：需用新版VOFA确认3450 ms交接无阶跃，减速时CAR规划确实为负值，且F407
+  融合后的CH22/CH23连续；M4仍需实测确认在8 s约束内通过B。
+
+## 2026-08-01：M4/M5/M6统一平滑起步与停车，明确排除M2
+
+- 修改原因：用户要求把M4的起步和停车规划同步到需要杆球平衡的移动赛题，随后明确M2不需要
+  平衡，不应采用这组缓加减速参数。
+- 最终决策：仅M4/M5/M6共享对称`100 mm/s²`加减速度、`400 mm/s³`限跃度和`0.15`
+  轮速加速度反馈增益。M2继续使用原通用`180/185 mm/s²`、近阶跃限跃度及零加速度反馈；
+  M3保持静车。M4继续使用`320 mm/s`巡航和B后`50 mm`目标；M5/M6继续使用`234 mm/s`
+  巡航、`110 mm/s`终点接近速度及横杠后`180 mm`停车目标。路线、距离、Task周期、状态机和
+  PeerLink协议未改。
+- 涉及文件：`config/core_config.h`、`Task/task_bringup_chassis.c`、`Task/README.md`、
+  `docs/DEVICE_PARAMETERS.md`、SpeedProfile主机测试和本记录。
+- 验证方式和结果：`tools/project.ps1 -Action Verify -Scope Auto`通过架构检查、差异检查、
+  SpeedProfile/Navigation主机测试、ARM严格编译及G3519 Bring-up Debug/Release完整链接；
+  主机测试继续断言M4在8 s内通过B，并覆盖M5/M6巡航段零计划纵向加速度、平滑末段减速和
+  横杠后`180 mm`目标。用户授权后，显式选择DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入G3519 Bring-up Debug
+  `85456 B`；从主Flash `0x00000000`完整回读，源BIN与回读SHA-256均为
+  `E6A98C8296D9F6702A605D1667617EAB3F738609ADA293EB640269813AD9E38D`，随后执行
+  `reset run`。
+- 已知限制与待确认：烧录和回读只证明镜像已正确部署；尚未做实车起停、M4过B时间或
+  M5/M6停车位置验证，`0.15`反馈增益仍需结合轮胎打滑、速度内环滞后和新版VOFA曲线确认。
+
+## 2026-08-01：M4/M5/M6统一起步、巡航零加速度与jerk停车收尾
+
+- 修改原因：用户进一步要求M4/M5/M6除起步和结尾外尽量保持车身纵向匀速，并指出停车时
+  不能在参考速度到零后立即释放速度闭环；旧终端路径会把约`-72 mm/s²`直接清零。
+- 最终决策：M4/M5/M6统一使用对称`100 mm/s²`和`400 mm/s³`。达到巡航后规划加速度
+  保持严格为0，轮速差分噪声不再重新打开加速度反馈；停车时速度目标先钳在0，内部负加速度
+  继续按jerk回到0后规划器才进入STOPPED。随后左右轮继续以0为目标闭环，均在`10 mm/s`
+  内连续100 ms才锁定并结束。三题在规划器运行期间统一发送同一规划加速度，包含起步、巡航
+  有效零值和停车尾段；M2不采用该规划，M3保持静车。
+- 涉及文件：`Mode/Car/Control/mode_car_speed_profile.c`、`Task/task_bringup_chassis.c`、
+  `config/core_config.h`、SpeedProfile测试、PeerLink/Task/Mode说明和本记录。未改Task周期、
+  UART协议字段、BSP、ISR/DMA、按键语义或赛题距离目标。
+- 验证方式和结果：SpeedProfile测试覆盖巡航噪声不产生非零参考、每10 ms加速度变化不超过
+  `4 mm/s²`、终端加速度回零、M4在8 s内过B及M5/M6横杠后180 mm目标；
+  `tools/project.ps1 -Action Verify -Scope Auto`通过。Bring-up Debug/Release clean-first完整
+  链接，FLASH/SRAM_BANK0分别为`85512/19280 B`和`81120/19272 B`。
+- 部署结果：通用Flash任务曾短暂写入不含产品Task的`18856 B`基础镜像，识别后立即纠正；
+  最终显式使用`g3519-bringup-debug`和DAPLink序列号
+  `000100011a5a5bb60000000000045c0aa5a5a5a597969908`写入`85512 B`产品镜像。
+  从主Flash `0x00000000`全长回读，源BIN与回读SHA-256均为
+  `8F809F452E5C9C4D981868C89F3648BCC56EAEC6F2F1F182E4065DA46859B448`，随后`reset run`。
+- 已知限制与待确认：软件测试和回读不能代替赛道实测。下一轮应确认M4过B时间、M5/M6横杠
+  后停车距离、中段CH6规划加速度长期为0、结尾CH6按jerk回零，以及停车后100 ms零速保持期间
+  两轮速度确实收敛；本轮未按KEY。

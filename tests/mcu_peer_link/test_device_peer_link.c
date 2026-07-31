@@ -161,17 +161,18 @@ static size_t encode_car_state(
     int32_t acceleration_z_mm_per_second2,
     int32_t pitch_rate_centi_dps,
     unsigned valid,
+    unsigned competition_mode,
     uint16_t sequence,
     uint8_t *frame)
 {
     char payload[64];
     int payload_length = snprintf(
-        payload, sizeof(payload), "%u,%lu,%ld,%ld,%ld,%ld,%u",
+        payload, sizeof(payload), "%u,%lu,%ld,%ld,%ld,%ld,%u,%u",
         (unsigned)node_id, (unsigned long)sample_ms,
         (long)speed_x_mm_per_second,
         (long)acceleration_x_mm_per_second2,
         (long)acceleration_z_mm_per_second2,
-        (long)pitch_rate_centi_dps, valid);
+        (long)pitch_rate_centi_dps, valid, competition_mode);
     size_t frame_length = 0U;
 
     assert(payload_length > 0);
@@ -348,6 +349,7 @@ static void test_car_state_send_boundaries_and_busy_sequence(void)
             DEVICE_PEER_LINK_CAR_ACCEL_ABS_MAX_MM_PER_SECOND2,
         .pitch_rate_centi_dps =
             DEVICE_PEER_LINK_CAR_PITCH_RATE_ABS_MAX_CENTI_DPS,
+        .competition_mode = DEVICE_PEER_LINK_COMPETITION_MODE_MAX,
         .valid = true,
     };
     Algorithm_Packet_Parser parser;
@@ -374,9 +376,9 @@ static void test_car_state_send_boundaries_and_busy_sequence(void)
     assert(memcmp(packet.type, "CAR", 3U) == 0);
     assert(packet.sequence == 0U);
     assert(packet.payload_length ==
-        sizeof("2,4294967295,-5000,-50000,50000,100000,1") - 1U);
+        sizeof("2,4294967295,-5000,-50000,50000,100000,1,6,0") - 1U);
     assert(memcmp(packet.payload,
-        "2,4294967295,-5000,-50000,50000,100000,1",
+        "2,4294967295,-5000,-50000,50000,100000,1,6,0",
         packet.payload_length) == 0);
 
     s_tx_busy = true;
@@ -393,15 +395,37 @@ static void test_car_state_send_boundaries_and_busy_sequence(void)
     }
     assert(packet.sequence == 1U);
 
+    {
+        Device_PeerLink_CarState planned_state = state;
+
+        planned_state.planned_acceleration_x_mm_per_second2 = 100;
+        planned_state.planned_acceleration_valid = true;
+        assert(Device_PeerLink_SendCarState(&link, &planned_state));
+        Algorithm_Packet_Parser_Reset(&parser);
+        for (size_t index = 0U; index < s_last_tx_length; ++index) {
+            (void)Algorithm_Packet_Parser_Feed(
+                &parser, s_last_tx[index], &packet);
+        }
+        assert(packet.sequence == 2U);
+        assert(packet.payload_length ==
+            sizeof("2,4294967295,-5000,-50000,50000,100000,1,6,0,100,1") -
+                1U);
+        assert(memcmp(packet.payload,
+            "2,4294967295,-5000,-50000,50000,100000,1,6,0,100,1",
+            packet.payload_length) == 0);
+    }
+
     assert(!Device_PeerLink_SendCarState(
         &link, &(Device_PeerLink_CarState){
             .speed_x_mm_per_second =
                 DEVICE_PEER_LINK_CAR_SPEED_ABS_MAX_MM_PER_SECOND + 1,
+            .competition_mode = DEVICE_PEER_LINK_COMPETITION_MODE_MIN,
             .valid = true,
         }));
     assert(!Device_PeerLink_SendCarState(
         &link, &(Device_PeerLink_CarState){
             .speed_x_mm_per_second = 1,
+            .competition_mode = DEVICE_PEER_LINK_COMPETITION_MODE_MIN,
             .valid = false,
         }));
     assert(link.status.car_state_tx_error_count == 2U);
@@ -418,7 +442,8 @@ static void test_car_state_receive_validation_and_age(void)
     fake_reset();
     assert(Device_PeerLink_Init(&link, &config, 0U));
     length = encode_car_state(
-        2U, UINT32_MAX, -5000, -50000, 50000, 100000, 1U, 9U, frame);
+        2U, UINT32_MAX, -5000, -50000, 50000, 100000, 1U, 6U, 9U,
+        frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 100U));
     assert(link.status.car_state_rx_count == 1U);
@@ -430,6 +455,7 @@ static void test_car_state_receive_validation_and_age(void)
     assert(state.acceleration_x_mm_per_second2 == -50000);
     assert(state.acceleration_z_mm_per_second2 == 50000);
     assert(state.pitch_rate_centi_dps == 100000);
+    assert(state.competition_mode == 6U);
     assert(state.valid);
 
     fake_queue_rx(frame, length);
@@ -437,18 +463,16 @@ static void test_car_state_receive_validation_and_age(void)
     assert(link.status.car_state_duplicate_sequence_count == 1U);
 
     length = encode_car_state(
-        1U, 120U, 0, 0, 0, 0, 0U, 10U, frame);
+        1U, 120U, 0, 0, 0, 0, 0U, 2U, 10U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 120U));
     assert(link.status.car_state_source_error_count == 1U);
 
     length = encode_car_state(
-        2U, 0U, 0, 0, 0, 0, 0U, 10U, frame);
+        2U, 0U, 0, 0, 0, 0, 0U, 3U, 10U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 130U));
-    assert(Device_PeerLink_GetRemoteCarState(&link, 130U, 50U, &state));
-    assert(state.sample_ms == 0U);
-    assert(!state.valid);
+    assert(!Device_PeerLink_GetRemoteCarState(&link, 130U, 50U, &state));
 
     {
         static const uint8_t invalid_payload[] = "2,140,1,0,0,0,0";
@@ -464,51 +488,75 @@ static void test_car_state_receive_validation_and_age(void)
     }
 
     length = encode_car_state(
-        2U, UINT32_MAX, 1, 2, 3, 4, 1U, 12U, frame);
+        2U, UINT32_MAX, 1, 2, 3, 4, 1U, 4U, 12U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 150U));
     assert(link.status.car_state_sample_time_error_count == 1U);
-    assert(Device_PeerLink_GetRemoteCarState(&link, 150U, 50U, &state));
-    assert(state.sample_ms == 0U);
-    assert(!state.valid);
+    assert(!Device_PeerLink_GetRemoteCarState(&link, 150U, 50U, &state));
 
     length = encode_heartbeat(2U, 100U, 1U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 160U));
     length = encode_car_state(
-        2U, 200U, 1, 2, 3, 4, 1U, 12U, frame);
+        2U, 200U, 1, 2, 3, 4, 1U, 5U, 12U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 161U));
     assert(Device_PeerLink_GetRemoteCarState(&link, 161U, 50U, &state));
     assert(state.sample_ms == 200U);
+    assert(state.competition_mode == 5U);
 
     length = encode_heartbeat(2U, 10U, 2U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 170U));
     assert(!Device_PeerLink_GetRemoteCarState(&link, 170U, 50U, &state));
     length = encode_car_state(
-        2U, 0U, 0, 0, 0, 0, 0U, 0U, frame);
+        2U, 0U, 0, 0, 0, 0, 0U, 2U, 0U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 171U));
-    assert(Device_PeerLink_GetRemoteCarState(&link, 171U, 50U, &state));
-    assert(!state.valid);
+    assert(!Device_PeerLink_GetRemoteCarState(&link, 171U, 50U, &state));
+
+    {
+        static const uint8_t planned_payload[] =
+            "2,1,0,0,0,0,0,4,100,1";
+        size_t frame_length = 0U;
+
+        assert(Algorithm_Packet_Encode(
+            "CAR", 1U, planned_payload, sizeof(planned_payload) - 1U,
+            frame, sizeof(frame), &frame_length) ==
+            ALGORITHM_PACKET_ENCODE_OK);
+        fake_queue_rx(frame, frame_length);
+        assert(Device_PeerLink_Step(&link, 171U));
+        assert(Device_PeerLink_GetRemoteCarState(
+            &link, 171U, 50U, &state));
+        assert(!state.valid);
+        assert(state.planned_acceleration_valid);
+        assert(state.planned_acceleration_x_mm_per_second2 == 100);
+    }
 
     length = encode_car_state(
-        2U, 1U, 0, 0, 0, 0, 2U, 1U, frame);
+        2U, 1U, 0, 0, 0, 0, 2U, 2U, 1U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 172U));
     length = encode_car_state(
         2U, 1U, 0,
         DEVICE_PEER_LINK_CAR_ACCEL_ABS_MAX_MM_PER_SECOND2 + 1,
-        0, 0, 1U, 1U, frame);
+        0, 0, 1U, 2U, 1U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, 173U));
-    assert(link.status.car_state_payload_error_count == 3U);
+    length = encode_car_state(
+        2U, 2U, 0, 0, 0, 0, 0U, 1U, 2U, frame);
+    fake_queue_rx(frame, length);
+    assert(Device_PeerLink_Step(&link, 174U));
+    length = encode_car_state(
+        2U, 2U, 0, 0, 0, 0, 0U, 7U, 2U, frame);
+    fake_queue_rx(frame, length);
+    assert(Device_PeerLink_Step(&link, 175U));
+    assert(link.status.car_state_payload_error_count == 5U);
 
     fake_reset();
     assert(Device_PeerLink_Init(&link, &config, UINT32_MAX - 20U));
     length = encode_car_state(
-        2U, 5U, 0, 0, 9807, 0, 1U, 0U, frame);
+        2U, 5U, 0, 0, 9807, 0, 1U, 6U, 0U, frame);
     fake_queue_rx(frame, length);
     assert(Device_PeerLink_Step(&link, UINT32_MAX - 20U));
     assert(Device_PeerLink_GetRemoteCarState(&link, 29U, 50U, &state));
@@ -578,6 +626,90 @@ static void test_debug_receive_validation_order_and_age(void)
         &link, 160U, 100U, &telemetry));
 }
 
+static void test_ball_command_send_boundaries_busy_and_sequences(void)
+{
+    Device_PeerLink link;
+    Device_PeerLink_Config config = make_config();
+    Algorithm_Packet_Parser parser;
+    Algorithm_Packet_View packet;
+    uint8_t storage[ALGORITHM_PACKET_PARSER_STORAGE_SIZE];
+
+    config.local_node_id = 2U;
+    config.remote_node_id = 1U;
+    fake_reset();
+    assert(Device_PeerLink_Init(&link, &config, 0U));
+    assert(Algorithm_Packet_Parser_Init(&parser, storage, sizeof(storage)));
+
+    assert(Device_PeerLink_SendBallTarget(
+        &link, DEVICE_PEER_LINK_BALL_TARGET_ABS_MAX_0P1_MM) ==
+        DEVICE_PEER_LINK_SEND_QUEUED);
+    for (size_t index = 0U; index < s_last_tx_length; ++index) {
+        (void)Algorithm_Packet_Parser_Feed(
+            &parser, s_last_tx[index], &packet);
+    }
+    assert(packet.type_length == 3U);
+    assert(memcmp(packet.type, "BTG", 3U) == 0);
+    assert(packet.sequence == 0U);
+    assert(packet.payload_length == sizeof("2,1250") - 1U);
+    assert(memcmp(packet.payload, "2,1250", packet.payload_length) == 0);
+    assert(link.status.ball_target_tx_count == 1U);
+
+    assert(Device_PeerLink_SendBallStop(&link) ==
+        DEVICE_PEER_LINK_SEND_QUEUED);
+    Algorithm_Packet_Parser_Reset(&parser);
+    for (size_t index = 0U; index < s_last_tx_length; ++index) {
+        (void)Algorithm_Packet_Parser_Feed(
+            &parser, s_last_tx[index], &packet);
+    }
+    assert(packet.type_length == 3U);
+    assert(memcmp(packet.type, "BST", 3U) == 0);
+    assert(packet.sequence == 0U);
+    assert(packet.payload_length == sizeof("2") - 1U);
+    assert(memcmp(packet.payload, "2", packet.payload_length) == 0);
+    assert(link.status.ball_stop_tx_count == 1U);
+
+    s_tx_busy = true;
+    assert(Device_PeerLink_SendBallTarget(
+        &link, -DEVICE_PEER_LINK_BALL_TARGET_ABS_MAX_0P1_MM) ==
+        DEVICE_PEER_LINK_SEND_BUSY);
+    assert(Device_PeerLink_SendBallStop(&link) ==
+        DEVICE_PEER_LINK_SEND_BUSY);
+    assert(link.status.ball_target_tx_busy_count == 1U);
+    assert(link.status.ball_stop_tx_busy_count == 1U);
+    s_tx_busy = false;
+
+    assert(Device_PeerLink_SendBallTarget(
+        &link, -DEVICE_PEER_LINK_BALL_TARGET_ABS_MAX_0P1_MM) ==
+        DEVICE_PEER_LINK_SEND_QUEUED);
+    Algorithm_Packet_Parser_Reset(&parser);
+    for (size_t index = 0U; index < s_last_tx_length; ++index) {
+        (void)Algorithm_Packet_Parser_Feed(
+            &parser, s_last_tx[index], &packet);
+    }
+    assert(memcmp(packet.type, "BTG", 3U) == 0);
+    assert(packet.sequence == 1U);
+    assert(packet.payload_length == sizeof("2,-1250") - 1U);
+    assert(memcmp(packet.payload, "2,-1250", packet.payload_length) == 0);
+
+    assert(Device_PeerLink_SendBallStop(&link) ==
+        DEVICE_PEER_LINK_SEND_QUEUED);
+    Algorithm_Packet_Parser_Reset(&parser);
+    for (size_t index = 0U; index < s_last_tx_length; ++index) {
+        (void)Algorithm_Packet_Parser_Feed(
+            &parser, s_last_tx[index], &packet);
+    }
+    assert(memcmp(packet.type, "BST", 3U) == 0);
+    assert(packet.sequence == 1U);
+
+    assert(Device_PeerLink_SendBallTarget(
+        &link, DEVICE_PEER_LINK_BALL_TARGET_ABS_MAX_0P1_MM + 1) ==
+        DEVICE_PEER_LINK_SEND_INVALID_ARGUMENT);
+    assert(Device_PeerLink_SendBallTarget(
+        &link, -DEVICE_PEER_LINK_BALL_TARGET_ABS_MAX_0P1_MM - 1) ==
+        DEVICE_PEER_LINK_SEND_INVALID_ARGUMENT);
+    assert(link.status.ball_target_tx_error_count == 2U);
+}
+
 int main(void)
 {
     test_dma_required_and_first_frame();
@@ -587,6 +719,7 @@ int main(void)
     test_car_state_send_boundaries_and_busy_sequence();
     test_car_state_receive_validation_and_age();
     test_debug_receive_validation_order_and_age();
+    test_ball_command_send_boundaries_busy_and_sequences();
     puts("device_peer_link tests: PASS");
     return 0;
 }

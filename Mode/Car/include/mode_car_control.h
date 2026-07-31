@@ -93,6 +93,11 @@ typedef struct {
     float maximum_speed_mm_per_second;
     float acceleration_up_mm_per_second2;
     float acceleration_down_mm_per_second2;
+    float jerk_up_mm_per_second3;
+    float jerk_down_mm_per_second3;
+    float measured_acceleration_filter_time_constant_seconds;
+    float acceleration_feedback_gain;
+    float maximum_measured_acceleration_mm_per_second2;
     float guard_distance_mm;
     float preview_time_seconds;
     float stopped_speed_threshold_mm_per_second;
@@ -108,6 +113,9 @@ typedef struct {
 typedef struct {
     float reference_speed_mm_per_second;
     float reference_acceleration_mm_per_second2;
+    float measured_acceleration_mm_per_second2;
+    float acceleration_error_mm_per_second2;
+    float acceleration_feedback_correction_mm_per_second2;
     float braking_speed_cap_mm_per_second;
     float remaining_distance_mm;
     float braking_trigger_distance_mm;
@@ -126,6 +134,9 @@ typedef struct {
     float start_distance_mm;
     float goal_distance_mm;
     float cruise_speed_mm_per_second;
+    float previous_measured_speed_mm_per_second;
+    float filtered_measured_acceleration_mm_per_second2;
+    bool measured_speed_initialized;
     bool initialized;
     bool running;
     bool stop_requested;

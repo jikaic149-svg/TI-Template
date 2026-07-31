@@ -32,8 +32,8 @@
 #define TEMPLATE_BRINGUP_MOTOR_COMMAND_LIMIT 8000
 
 /*
- * VOFA+ FireWater telemetry period in milliseconds. Each line has 22
- * car/pendulum/raw-grayscale debug channels in a 192-byte static buffer; normal bounded
+ * VOFA+ FireWater telemetry period in milliseconds. Each line has 32
+ * car/profile/raw-grayscale/F407 debug channels in a 320-byte static buffer; normal bounded
  * values at 20 ms (50 Hz) fit the 115200-baud budget and 1023-byte TX ring.
  */
 #define TEMPLATE_BRINGUP_TELEMETRY_PERIOD_MS UINT32_C(20)
@@ -42,9 +42,9 @@
  * the page in about 200 ms without coupling display work to 50 Hz telemetry. */
 #define TEMPLATE_BRINGUP_DISPLAY_STEP_PERIOD_MS UINT32_C(50)
 
-/* Moving-link JY61P is indication/calibration only. Its 0x53 Pitch is added
- * to the chassis ICM45686 Pitch for local CH12 telemetry and never enters
- * navigation or motor control. An older Euler sample is invalid. */
+/* Moving-link JY61P initialization is disabled. This age limit is retained
+ * only for the independent SWD-readable rod-calibration cache if initialization
+ * is explicitly restored later; fixed VOFA CH12/CH13 now report acceleration. */
 #define TEMPLATE_BRINGUP_JY61P_ANGLE_TIMEOUT_MS UINT32_C(500)
 
 /* Start-key recognition; all values are milliseconds and must be nonzero. */
@@ -87,25 +87,25 @@
 /* M2 line-tracking wheel-speed half difference. */
 #define TEMPLATE_BRINGUP_ITEM2_MAXIMUM_HALF_DIFFERENCE_MM_PER_SECOND 230.0F
 
-/* M4 A->B longitudinal plan. The 10 ms profile changes its reference by
- * exactly 1.2 mm/s per full control step during both acceleration and
- * braking. The 50 mm goal runout leaves 15 mm beyond B after the shared
- * 35 mm guard, so the scoring point is crossed rather than approached only.
- * Ideal kinematics cross B in about 6.9 s, below the 8 s requirement. */
-#define TEMPLATE_BRINGUP_ITEM4_AB_CRUISE_SPEED_MM_PER_SECOND 320.0F
-#define TEMPLATE_BRINGUP_ITEM4_AB_ACCELERATION_MM_PER_SECOND2 120.0F
-#define TEMPLATE_BRINGUP_ITEM4_AB_DECELERATION_MM_PER_SECOND2 120.0F
-#define TEMPLATE_BRINGUP_ITEM4_PASS_B_RUNOUT_MM 50.0F
+/* Ball-carrying moving items M4/M5/M6 share M4's longitudinal launch/stop
+ * shape. Symmetric 100 mm/s^2 acceleration/deceleration is entered and
+ * released at 400 mm/s^3, so a full ramp takes 250 ms. M2 retains the generic
+ * faster profile because it does not carry the ball; M3 keeps the chassis
+ * stationary. Route speeds and distances remain mode-specific. */
+#define TEMPLATE_BRINGUP_SHARED_ACCELERATION_MM_PER_SECOND2 100.0F
+#define TEMPLATE_BRINGUP_SHARED_DECELERATION_MM_PER_SECOND2 100.0F
+#define TEMPLATE_BRINGUP_SHARED_JERK_MM_PER_SECOND3 400.0F
+#define TEMPLATE_BRINGUP_SHARED_ACCELERATION_FEEDBACK_GAIN 0.15F
 
-/* M5/M6 one-lap ball-carrying plan. The 234 mm/s route cap stays unchanged
- * through the four tangent points. On the final D->A arc it reaches 110 mm/s
- * at the lower edge of the finish-marker window. After marker confirmation,
- * M5/M6 reuse M2's fixed 180 mm grayscale-tracking runout before stopping and
- * add launch-yaw correction during that final segment. The 230 mm sensor
- * offset remains the independent score-time reference. */
+/* M4 A->B route-specific speed and distance. The 50 mm goal runout keeps the
+ * scoring point beyond B while retaining margin for the 8 s requirement. */
+#define TEMPLATE_BRINGUP_ITEM4_AB_CRUISE_SPEED_MM_PER_SECOND 320.0F
+#define TEMPLATE_BRINGUP_ITEM4_PASS_B_RUNOUT_MM 50.0F
+/* M5/M6 one-lap ball-carrying plan. The 234 mm/s longitudinal cap stays
+ * unchanged through every straight/arc tangent, so straight travel has zero
+ * planned longitudinal acceleration. Start, final approach and stop use the
+ * shared M4 acceleration, deceleration and jerk above. */
 #define TEMPLATE_BRINGUP_ITEM56_LAP_CRUISE_SPEED_MM_PER_SECOND 234.0F
-#define TEMPLATE_BRINGUP_ITEM56_LAP_ACCELERATION_MM_PER_SECOND2 120.0F
-#define TEMPLATE_BRINGUP_ITEM56_LAP_DECELERATION_MM_PER_SECOND2 100.0F
 #define TEMPLATE_BRINGUP_ITEM56_FINISH_APPROACH_SPEED_MM_PER_SECOND 110.0F
 #define TEMPLATE_BRINGUP_ITEM56_LINE_SENSOR_OFFSET_MM 230.0F
 #define TEMPLATE_BRINGUP_ITEM56_AFTER_MARKER_GOAL_RUNOUT_MM 180.0F
@@ -125,10 +125,25 @@
  * final chassis before scoring runs. */
 #define TEMPLATE_CAR_PROFILE_ACCELERATION_UP_MM_PER_SECOND2 180.0F
 #define TEMPLATE_CAR_PROFILE_ACCELERATION_DOWN_MM_PER_SECOND2 185.0F
+/* Generic profiles retain their historical near-step acceleration. Product
+ * modes that carry the ball override these with bounded jerk below. */
+#define TEMPLATE_CAR_PROFILE_JERK_UP_MM_PER_SECOND3 1000000.0F
+#define TEMPLATE_CAR_PROFILE_JERK_DOWN_MM_PER_SECOND3 1000000.0F
+/* Mean-wheel acceleration feedback is disabled generically. The G3519
+ * competition Task enables the shared small P correction above after an
+ * 80 ms exact first-order low-pass. */
+#define TEMPLATE_CAR_PROFILE_MEASURED_ACCEL_FILTER_TIME_CONSTANT_SECONDS 0.080F
+#define TEMPLATE_CAR_PROFILE_ACCELERATION_FEEDBACK_GAIN 0.0F
+#define TEMPLATE_CAR_PROFILE_MAXIMUM_MEASURED_ACCEL_MM_PER_SECOND2 3000.0F
 #define TEMPLATE_CAR_PROFILE_MAXIMUM_SPEED_MM_PER_SECOND 600.0F
 #define TEMPLATE_CAR_PROFILE_GUARD_DISTANCE_MM 35.0F
 #define TEMPLATE_CAR_PROFILE_PREVIEW_TIME_SECONDS 0.060F
 #define TEMPLATE_CAR_PROFILE_STOPPED_SPEED_THRESHOLD_MM_PER_SECOND 10.0F
+/* Once the reference reaches zero, the Bring-up Task keeps the wheel-speed
+ * loop at a zero target until both wheels remain inside the profile's stopped
+ * threshold for this duration. This prevents the final low-speed sample from
+ * immediately unlocking the motors. */
+#define TEMPLATE_BRINGUP_ZERO_SPEED_HOLD_STABLE_MS UINT32_C(100)
 #define TEMPLATE_BRINGUP_GRAYSCALE_AUXILIARY_HOLD_MS UINT32_C(250)
 /* R500赛道的惯导前视。200 mm把切入直线/半圆的提前量限制在0.4R；
  * 600 mm会在理想运动学仿真中产生约160 mm的一圈相位位置误差。 */
@@ -180,6 +195,11 @@
 #define TEMPLATE_PEER_LINK_RX_BYTES_PER_STEP 128U
 /* G3519 submits one latest chassis state to F407 at 100 Hz. */
 #define TEMPLATE_PEER_LINK_CAR_STATE_PERIOD_MS UINT32_C(10)
+/* The debug/product ball-target entrance stays 5 mm inside the protocol's
+ * +/-125.0 mm coding domain. Units are 0.1 mm. A queued command may retry at
+ * most once per 10 ms Task cycle and stops after this many BUSY results. */
+#define TEMPLATE_BRINGUP_BALL_TARGET_ABS_MAX_0P1_MM INT32_C(1200)
+#define TEMPLATE_PEER_LINK_BALL_COMMAND_QUEUE_ATTEMPT_LIMIT UINT32_C(3)
 
 /* ==================== 车辆控制 ==================== */
 

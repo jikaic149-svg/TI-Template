@@ -3,7 +3,12 @@
 #include <limits.h>
 #include <string.h>
 
-#define DEVICE_PEER_LINK_CAR_STATE_FIELD_COUNT 7U
+#define DEVICE_PEER_LINK_CAR_STATE_LEGACY_FIELD_COUNT 8U
+#define DEVICE_PEER_LINK_CAR_STATE_PLANNED_FIELD_COUNT 10U
+#define DEVICE_PEER_LINK_CAR_STATE_TASK_FIELD_COUNT 9U
+#define DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_FIELD_COUNT 11U
+#define DEVICE_PEER_LINK_CAR_STATE_FIELD_CAPACITY \
+    DEVICE_PEER_LINK_CAR_STATE_TASK_PLANNED_FIELD_COUNT
 #define DEVICE_PEER_LINK_DEBUG_FIELD_COUNT 11U
 #define DEVICE_PEER_LINK_F407_NODE_ID 1U
 #define DEVICE_PEER_LINK_G3519_NODE_ID 2U
@@ -147,7 +152,15 @@ static bool car_state_values_valid(const Device_PeerLink_CarState *state)
         !absolute_i32_within(state->acceleration_z_mm_per_second2,
             DEVICE_PEER_LINK_CAR_ACCEL_ABS_MAX_MM_PER_SECOND2) ||
         !absolute_i32_within(state->pitch_rate_centi_dps,
-            DEVICE_PEER_LINK_CAR_PITCH_RATE_ABS_MAX_CENTI_DPS)) {
+            DEVICE_PEER_LINK_CAR_PITCH_RATE_ABS_MAX_CENTI_DPS) ||
+        !absolute_i32_within(state->planned_acceleration_x_mm_per_second2,
+            DEVICE_PEER_LINK_CAR_PLAN_ACCEL_ABS_MAX_MM_PER_SECOND2) ||
+        (state->competition_mode < DEVICE_PEER_LINK_COMPETITION_MODE_MIN) ||
+        (state->competition_mode > DEVICE_PEER_LINK_COMPETITION_MODE_MAX)) {
+        return false;
+    }
+    if (!state->planned_acceleration_valid &&
+        (state->planned_acceleration_x_mm_per_second2 != 0)) {
         return false;
     }
     return state->valid ||
@@ -274,8 +287,8 @@ static void consume_car_state(
     const Algorithm_Packet_View *packet,
     uint32_t now_ms)
 {
-    size_t start[DEVICE_PEER_LINK_CAR_STATE_FIELD_COUNT];
-    size_t length[DEVICE_PEER_LINK_CAR_STATE_FIELD_COUNT];
+    size_t start[DEVICE_PEER_LINK_CAR_STATE_FIELD_CAPACITY];
+    size_t length[DEVICE_PEER_LINK_CAR_STATE_FIELD_CAPACITY];
     size_t field_count = 0U;
     size_t field_start = 0U;
     uint32_t node_id;
@@ -285,11 +298,14 @@ static void consume_car_state(
     int32_t acceleration_z_mm_per_second2;
     int32_t pitch_rate_centi_dps;
     uint32_t valid;
+    uint32_t competition_mode;
+    int32_t planned_acceleration = 0;
+    uint32_t planned_acceleration_valid = 0U;
 
     for (size_t index = 0U; index <= packet->payload_length; ++index) {
         if ((index == packet->payload_length) ||
             (packet->payload[index] == ',')) {
-            if ((field_count >= DEVICE_PEER_LINK_CAR_STATE_FIELD_COUNT) ||
+            if ((field_count >= DEVICE_PEER_LINK_CAR_STATE_FIELD_CAPACITY) ||
                 (index == field_start)) {
                 increment_saturating(
                     &link->status.car_state_payload_error_count);
@@ -301,9 +317,21 @@ static void consume_car_state(
             field_start = index + 1U;
         }
     }
-    if ((field_count != DEVICE_PEER_LINK_CAR_STATE_FIELD_COUNT) ||
+    if (((field_count != DEVICE_PEER_LINK_CAR_STATE_LEGACY_FIELD_COUNT) &&
+         (field_count != DEVICE_PEER_LINK_CAR_STATE_PLANNED_FIELD_COUNT)) ||
         !parse_u32_canonical(
             &packet->payload[start[0]], length[0], &node_id)) {
+        increment_saturating(&link->status.car_state_payload_error_count);
+        return;
+    }
+    if ((field_count == DEVICE_PEER_LINK_CAR_STATE_PLANNED_FIELD_COUNT) &&
+        (!parse_i32_canonical(
+            &packet->payload[start[8]], length[8],
+            &planned_acceleration) ||
+         !parse_u32_canonical(
+            &packet->payload[start[9]], length[9],
+            &planned_acceleration_valid) ||
+         (planned_acceleration_valid > 1U))) {
         increment_saturating(&link->status.car_state_payload_error_count);
         return;
     }
@@ -329,7 +357,11 @@ static void consume_car_state(
             &pitch_rate_centi_dps) ||
         !parse_u32_canonical(
             &packet->payload[start[6]], length[6], &valid) ||
-        (valid > 1U)) {
+        !parse_u32_canonical(
+            &packet->payload[start[7]], length[7], &competition_mode) ||
+        (valid > 1U) ||
+        (competition_mode < DEVICE_PEER_LINK_COMPETITION_MODE_MIN) ||
+        (competition_mode > DEVICE_PEER_LINK_COMPETITION_MODE_MAX)) {
         increment_saturating(&link->status.car_state_payload_error_count);
         return;
     }
@@ -342,7 +374,12 @@ static void consume_car_state(
             .acceleration_z_mm_per_second2 =
                 acceleration_z_mm_per_second2,
             .pitch_rate_centi_dps = pitch_rate_centi_dps,
+            .planned_acceleration_x_mm_per_second2 =
+                planned_acceleration,
+            .competition_mode = (uint8_t)competition_mode,
             .valid = valid != 0U,
+            .planned_acceleration_valid =
+                planned_acceleration_valid != 0U,
             .received_at_ms = now_ms,
         };
 
@@ -684,6 +721,24 @@ bool Device_PeerLink_SendCarState(
             &payload_length) ||
         !append_u32(link->tx_payload, sizeof(link->tx_payload),
             &payload_length, state->valid ? 1U : 0U) ||
+        !append_separator(link->tx_payload, sizeof(link->tx_payload),
+            &payload_length) ||
+        !append_u32(link->tx_payload, sizeof(link->tx_payload),
+            &payload_length, state->competition_mode) ||
+        !append_separator(link->tx_payload, sizeof(link->tx_payload),
+            &payload_length) ||
+        !append_u32(link->tx_payload, sizeof(link->tx_payload),
+            &payload_length, state->competition_task_active ? 1U : 0U) ||
+        (state->planned_acceleration_valid &&
+         (!append_separator(link->tx_payload, sizeof(link->tx_payload),
+              &payload_length) ||
+          !append_i32(link->tx_payload, sizeof(link->tx_payload),
+              &payload_length,
+              state->planned_acceleration_x_mm_per_second2) ||
+          !append_separator(link->tx_payload, sizeof(link->tx_payload),
+              &payload_length) ||
+          !append_u32(link->tx_payload, sizeof(link->tx_payload),
+              &payload_length, 1U))) ||
         (Algorithm_Packet_Encode(
             "CAR", link->car_state_tx_sequence,
             link->tx_payload, payload_length,
@@ -709,6 +764,97 @@ bool Device_PeerLink_SendCarState(
     return true;
 }
 
+Device_PeerLink_SendResult Device_PeerLink_SendBallTarget(
+    Device_PeerLink *link,
+    int32_t target_0p1mm)
+{
+    size_t payload_length = 0U;
+    size_t frame_length = 0U;
+    BSP_UART_Result result;
+
+    if ((link == NULL) || !link->initialized ||
+        (link->config.local_node_id != DEVICE_PEER_LINK_G3519_NODE_ID) ||
+        (link->config.remote_node_id != DEVICE_PEER_LINK_F407_NODE_ID) ||
+        !absolute_i32_within(target_0p1mm,
+            DEVICE_PEER_LINK_BALL_TARGET_ABS_MAX_0P1_MM)) {
+        if ((link != NULL) && link->initialized) {
+            increment_saturating(&link->status.ball_target_tx_error_count);
+        }
+        return DEVICE_PEER_LINK_SEND_INVALID_ARGUMENT;
+    }
+    if (!append_u32(link->tx_payload, sizeof(link->tx_payload),
+            &payload_length, link->config.local_node_id) ||
+        !append_separator(link->tx_payload, sizeof(link->tx_payload),
+            &payload_length) ||
+        !append_i32(link->tx_payload, sizeof(link->tx_payload),
+            &payload_length, target_0p1mm) ||
+        (Algorithm_Packet_Encode(
+            "BTG", link->ball_target_tx_sequence,
+            link->tx_payload, payload_length,
+            link->tx_frame, sizeof(link->tx_frame), &frame_length) !=
+         ALGORITHM_PACKET_ENCODE_OK)) {
+        increment_saturating(&link->status.ball_target_tx_error_count);
+        return DEVICE_PEER_LINK_SEND_ERROR;
+    }
+
+    result = BSP_UART_WriteBuffered(
+        link->uart, link->tx_frame, frame_length);
+    if (result == BSP_UART_RESULT_BUSY) {
+        increment_saturating(&link->status.ball_target_tx_busy_count);
+        return DEVICE_PEER_LINK_SEND_BUSY;
+    }
+    if (result != BSP_UART_RESULT_OK) {
+        increment_saturating(&link->status.ball_target_tx_error_count);
+        return DEVICE_PEER_LINK_SEND_ERROR;
+    }
+    link->ball_target_tx_sequence =
+        (uint16_t)(link->ball_target_tx_sequence + 1U);
+    increment_saturating(&link->status.ball_target_tx_count);
+    return DEVICE_PEER_LINK_SEND_QUEUED;
+}
+
+Device_PeerLink_SendResult Device_PeerLink_SendBallStop(
+    Device_PeerLink *link)
+{
+    size_t payload_length = 0U;
+    size_t frame_length = 0U;
+    BSP_UART_Result result;
+
+    if ((link == NULL) || !link->initialized ||
+        (link->config.local_node_id != DEVICE_PEER_LINK_G3519_NODE_ID) ||
+        (link->config.remote_node_id != DEVICE_PEER_LINK_F407_NODE_ID)) {
+        if ((link != NULL) && link->initialized) {
+            increment_saturating(&link->status.ball_stop_tx_error_count);
+        }
+        return DEVICE_PEER_LINK_SEND_INVALID_ARGUMENT;
+    }
+    if (!append_u32(link->tx_payload, sizeof(link->tx_payload),
+            &payload_length, link->config.local_node_id) ||
+        (Algorithm_Packet_Encode(
+            "BST", link->ball_stop_tx_sequence,
+            link->tx_payload, payload_length,
+            link->tx_frame, sizeof(link->tx_frame), &frame_length) !=
+         ALGORITHM_PACKET_ENCODE_OK)) {
+        increment_saturating(&link->status.ball_stop_tx_error_count);
+        return DEVICE_PEER_LINK_SEND_ERROR;
+    }
+
+    result = BSP_UART_WriteBuffered(
+        link->uart, link->tx_frame, frame_length);
+    if (result == BSP_UART_RESULT_BUSY) {
+        increment_saturating(&link->status.ball_stop_tx_busy_count);
+        return DEVICE_PEER_LINK_SEND_BUSY;
+    }
+    if (result != BSP_UART_RESULT_OK) {
+        increment_saturating(&link->status.ball_stop_tx_error_count);
+        return DEVICE_PEER_LINK_SEND_ERROR;
+    }
+    link->ball_stop_tx_sequence =
+        (uint16_t)(link->ball_stop_tx_sequence + 1U);
+    increment_saturating(&link->status.ball_stop_tx_count);
+    return DEVICE_PEER_LINK_SEND_QUEUED;
+}
+
 bool Device_PeerLink_GetRemoteCarState(
     const Device_PeerLink *link,
     uint32_t now_ms,
@@ -717,6 +863,8 @@ bool Device_PeerLink_GetRemoteCarState(
 {
     if ((link == NULL) || !link->initialized || (state == NULL) ||
         !link->remote_car_state_seen ||
+        (!link->remote_car_state.valid &&
+         !link->remote_car_state.planned_acceleration_valid) ||
         ((uint32_t)(now_ms - link->remote_car_state.received_at_ms) >
             maximum_age_ms)) {
         return false;
