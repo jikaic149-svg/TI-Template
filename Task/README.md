@@ -116,7 +116,7 @@ BUSY_RETRY、QUEUED、INVALID、BUSY_EXHAUSTED或SEND_ERROR；
 即停止，使用新请求号才重提。M3按键选择/确认语义不变，BTG不隐式启动F407滚球闭环。
 
 Bring-up Task 同时持有一个 `Device_PeerLink`：UART1 PB4/PB5 使用 DMA_CH1/CH0，
-作为节点 2 每 500 ms 与 F407 节点 1 双向交换心跳，以 100 Hz 发送九/十一字段 `CAR`
+作为节点 2 每 500 ms 与 F407 节点 1 双向交换心跳，以 100 Hz 发送九/十一/十三字段 `CAR`
 状态，尾部同步当前赛题号`2..6`和任务活动位。M4/M5/M6运行期间发送同一轮速规划器的
 规划加速度及独立有效位；M2/M3保持九字段。M3短按KEY只切换任务活动位，不再提交
 BTG/BST，也不控制F407的QD4310/CAN使能状态。mode只供F407和视觉侧显示/诊断，不触发滚球

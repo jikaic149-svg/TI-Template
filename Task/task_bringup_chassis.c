@@ -522,7 +522,6 @@ static Device_PeerLink_CarState bringup_make_car_state(
         state.filtered_wheel_acceleration_x_mm_per_second2 =
             g_filtered_wheel_acceleration_mm_s2;
     }
-
     if ((speed_a != NULL) && (speed_b != NULL) &&
         (imu_snapshot != NULL) && encoder_samples_valid &&
         imu_navigation_valid &&

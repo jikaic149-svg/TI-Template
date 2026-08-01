@@ -430,6 +430,7 @@ static void test_car_state_send_boundaries_and_busy_sequence(void)
         assert(memcmp(packet.payload,
             "2,4294967295,-5000,-50000,50000,100000,1,6,1,100,1,-80,1",
             packet.payload_length) == 0);
+
     }
 
     assert(!Device_PeerLink_SendCarState(
