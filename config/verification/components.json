@@ -20,6 +20,39 @@
   ],
   "components": [
     {
+      "id": "Message",
+      "description": "静态 Pub/Sub、FIFO 和 Latest Value，含 FreeRTOS 移植",
+      "inputs": ["Core", "tests/message"],
+      "dependencies": [],
+      "configPrefixes": [],
+      "hostScopes": ["Message"],
+      "armScopes": ["Message"],
+      "buildPresets": ["build-g3519-feature-smoke-debug", "build-g3519-feature-smoke-release",
+        "build-g3519-command-flow-debug", "build-g3519-command-flow-release"]
+    },
+    {
+      "id": "Services",
+      "description": "简单行输入与可选 CRC 数据包服务",
+      "inputs": ["Service", "APP/Algorithm/Packet", "tests/services"],
+      "dependencies": ["Message"],
+      "configPrefixes": [],
+      "hostScopes": ["Services"],
+      "armScopes": ["Services"],
+      "buildPresets": ["build-g3519-feature-smoke-debug", "build-g3519-feature-smoke-release",
+        "build-g3519-command-flow-debug", "build-g3519-command-flow-release"]
+    },
+    {
+      "id": "CommandFlow",
+      "description": "串口命令、控制 Task、LED Device 与独立反馈订阅示例",
+      "inputs": ["examples", "tests/command_flow", "Device/Actuator/LED",
+        "Device/Communication/Serial", "Task"],
+      "dependencies": ["Services"],
+      "configPrefixes": ["TEMPLATE_EXAMPLE_COMMAND_"],
+      "hostScopes": ["CommandFlow"],
+      "armScopes": ["CommandFlow"],
+      "buildPresets": ["build-g3519-command-flow-debug", "build-g3519-command-flow-release"]
+    },
+    {
       "id": "Watchdog",
       "description": "全局健康策略、Device 门面和两颗 MCU 的 WWDT BSP",
       "inputs": [

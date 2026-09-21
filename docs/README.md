@@ -10,3 +10,4 @@
   两颗 MCU 的板载占用、SysConfig 可选引脚、推荐分配、DMA/IRQ 规划；只作推荐，
   不代表已经修改 `.syscfg`。
 - [`PROCESS.md`](PROCESS.md)：影响后续开发判断的硬件映射、构建和验证记录。
+- [`FRAMEWORK_V1.md`](FRAMEWORK_V1.md)：消息、服务、应用示例与分场景校验的初版边界。

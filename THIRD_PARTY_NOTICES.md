@@ -1,5 +1,16 @@
 # Third-party notices
 
+## 2026-09 框架设计参考
+
+- H7_BSP：`https://github.com/MermaidFAR/H7_BSP`，参考快照 `be12d09`；
+  借鉴 FIFO / latest-value 区分、明确提交结果及基础设施职责。
+- basic_framework：`https://gitee.com/hnuyuelurm/basic_framework`，此前审阅快照
+  `f1d1048`；借鉴命令发布、执行模块订阅和反馈发布的应用组织。
+
+本次新增 Core、Service 和 command_flow 是按 TI-Template 现有接口编写的实现，
+没有复制这两个框架的源码、注释、硬件配置或二进制。两个框架各自的材料仍适用其
+原有许可，未被根目录 MIT 许可重新许可。
+
 根目录 `LICENSE` 只适用于模板贡献者新编写并拥有版权的代码和文档，不替代、
 扩展或重新许可本文件列出的第三方材料。第三方文件自身的许可证声明与许可证
 文件具有优先效力。

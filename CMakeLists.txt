@@ -29,6 +29,10 @@ option(TEMPLATE_FREERTOS_USE_TRACE
 option(TEMPLATE_ENABLE_MODE_CAR
     "Compile the reusable car modes and controllers"
     OFF)
+option(TEMPLATE_ENABLE_CORE_MESSAGE "Compile static task-context Pub/Sub" OFF)
+option(TEMPLATE_ENABLE_SERVICE_LINE "Compile bounded ASCII line input" OFF)
+option(TEMPLATE_ENABLE_SERVICE_PACKET "Compile optional CRC packet Pub/Sub adapter" OFF)
+option(TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW "Run the opt-in serial LED command example" OFF)
 option(TEMPLATE_ENABLE_MODE_GIMBAL
     "Compile the reusable two-axis gimbal modes"
     OFF)
@@ -127,6 +131,19 @@ option(TEMPLATE_ENABLE_DEVICE_FLASH
 # needs. These are ordinary variables rather than forced cache values, so
 # disabling the parent feature on the next configure does not leave hidden
 # modules enabled.
+set(TEMPLATE_BUILD_CORE_MESSAGE "${TEMPLATE_ENABLE_CORE_MESSAGE}")
+set(TEMPLATE_BUILD_SERVICE_LINE "${TEMPLATE_ENABLE_SERVICE_LINE}")
+set(TEMPLATE_BUILD_DEVICE_LED "${TEMPLATE_ENABLE_DEVICE_LED}")
+if(TEMPLATE_ENABLE_SERVICE_PACKET OR TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW)
+    set(TEMPLATE_BUILD_CORE_MESSAGE ON)
+endif()
+if(TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW)
+    if(NOT MSPM0_DEVICE STREQUAL "MSPM0G3519")
+        message(FATAL_ERROR "The command-flow example currently binds G3519 resources")
+    endif()
+    set(TEMPLATE_BUILD_SERVICE_LINE ON)
+    set(TEMPLATE_BUILD_DEVICE_LED ON)
+endif()
 set(TEMPLATE_BUILD_ALGORITHM_SPSC_RING
     "${TEMPLATE_ENABLE_ALGORITHM_SPSC_RING}")
 set(TEMPLATE_BUILD_ALGORITHM_PACKET
@@ -156,6 +173,12 @@ set(TEMPLATE_BUILD_DEVICE_LINE_TRACKING
     "${TEMPLATE_ENABLE_DEVICE_LINE_TRACKING}")
 set(TEMPLATE_BUILD_DEVICE_SERIAL
     "${TEMPLATE_ENABLE_DEVICE_SERIAL}")
+if(TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW)
+    set(TEMPLATE_BUILD_DEVICE_SERIAL ON)
+endif()
+if(TEMPLATE_ENABLE_SERVICE_PACKET)
+    set(TEMPLATE_BUILD_ALGORITHM_PACKET ON)
+endif()
 if(TEMPLATE_ENABLE_DEVICE_BMI088 OR TEMPLATE_ENABLE_DEVICE_ICM45686)
     set(TEMPLATE_BUILD_DEVICE_IMU ON)
 endif()
@@ -374,6 +397,18 @@ if(TEMPLATE_ENABLE_MODE_COMMUNICATE)
     add_subdirectory(Mode/Communicate)
 endif()
 add_subdirectory(FreeRTOS)
+if(TEMPLATE_BUILD_CORE_MESSAGE)
+    add_subdirectory(Core/Message)
+endif()
+if(TEMPLATE_BUILD_SERVICE_LINE)
+    add_subdirectory(Service/Line)
+endif()
+if(TEMPLATE_ENABLE_SERVICE_PACKET)
+    add_subdirectory(Service/Packet)
+endif()
+if(TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW)
+    add_subdirectory(examples/command_flow)
+endif()
 add_subdirectory(Task)
 
 set(FIRMWARE_TARGET "${MSPM0_DEVICE}.elf")

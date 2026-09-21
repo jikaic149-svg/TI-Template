@@ -2,6 +2,9 @@
 param(
     [ValidateSet(
         "All",
+        "Message",
+        "Services",
+        "CommandFlow",
         "Watchdog",
         "Communication",
         "IMU",
@@ -51,6 +54,10 @@ function Test-ScopeEnabled {
 }
 
 $includes = @(
+    "Core\Message",
+    "Service\Line",
+    "Service\Packet",
+    "examples\command_flow",
     "config",
     "BSP",
     "APP\System\Watchdog",
@@ -97,6 +104,16 @@ foreach ($include in $includes) {
     $includeArguments += @("-I", (Join-Path $workspaceRoot $include))
 }
 $sources = [System.Collections.Generic.List[string]]::new()
+if (Test-ScopeEnabled -Name "Message") {
+    $sources.Add("Core\Message\core_message.c")
+}
+if (Test-ScopeEnabled -Name "Services") {
+    $sources.Add("Service\Line\service_line.c")
+    $sources.Add("Service\Packet\service_packet.c")
+}
+if (Test-ScopeEnabled -Name "CommandFlow") {
+    $sources.Add("examples\command_flow\example_command_flow.c")
+}
 if (Test-ScopeEnabled -Name "Watchdog") {
     $sources.Add("APP\System\Watchdog\app_watchdog.c")
     $sources.Add("Device\System\Watchdog\device_watchdog.c")

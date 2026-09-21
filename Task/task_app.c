@@ -6,6 +6,12 @@
 #include "task.h"
 #include "core_config.h"
 
+#if defined(TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW)
+#include "example_command_flow.h"
+/* Debugger-only per-cycle events; business feedback uses the status topic. */
+volatile uint32_t g_TASK_ExampleEvents = 0U;
+#endif
+
 #define TASK_CONTROL_PRIORITY \
     (tskIDLE_PRIORITY + TEMPLATE_TASK_CONTROL_PRIORITY_OFFSET)
 
@@ -30,6 +36,9 @@ static void Task_Control(void *argument)
             (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
         ++g_TASK_Heartbeat;
         ++g_TASK_UpdateCount;
+#if defined(TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW)
+        g_TASK_ExampleEvents = Example_CommandFlow_Update(g_TASK_NowMs);
+#endif
         {
             const APP_Watchdog_Health watchdog_health = {
                 .required_sources = APP_WATCHDOG_SOURCE_CONTROL_TASK,
@@ -62,6 +71,13 @@ bool Task_Init(void)
         g_TASK_Fault = 3U;
         return false;
     }
+
+#if defined(TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW)
+    if (!Example_CommandFlow_Init()) {
+        g_TASK_Fault = 4U;
+        return false;
+    }
+#endif
 
     task = xTaskCreateStatic(
         Task_Control,

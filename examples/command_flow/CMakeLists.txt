@@ -1,0 +1,5 @@
+add_library(example_command_flow STATIC "example_command_flow.c")
+target_include_directories(example_command_flow PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(example_command_flow PRIVATE "${CMAKE_SOURCE_DIR}/config")
+target_link_libraries(example_command_flow PUBLIC core_message)
+target_link_libraries(example_command_flow PRIVATE service_line device_led device_serial)

@@ -55,7 +55,11 @@
         "TEMPLATE_ENABLE_MODE_COMMUNICATE": false,
         "TEMPLATE_ENABLE_DEVICE_SERIAL": false,
         "TEMPLATE_ENABLE_DEVICE_LORA": false,
-        "TEMPLATE_ENABLE_DEVICE_FLASH": false
+        "TEMPLATE_ENABLE_DEVICE_FLASH": false,
+        "TEMPLATE_ENABLE_CORE_MESSAGE": false,
+        "TEMPLATE_ENABLE_SERVICE_LINE": false,
+        "TEMPLATE_ENABLE_SERVICE_PACKET": false,
+        "TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW": false
       }
     },
     {
@@ -155,7 +159,10 @@
         "TEMPLATE_ENABLE_DEVICE_IMU": true,
         "TEMPLATE_ENABLE_DEVICE_SERIAL": true,
         "TEMPLATE_ENABLE_DEVICE_LORA": true,
-        "TEMPLATE_ENABLE_DEVICE_FLASH": true
+        "TEMPLATE_ENABLE_DEVICE_FLASH": true,
+        "TEMPLATE_ENABLE_CORE_MESSAGE": true,
+        "TEMPLATE_ENABLE_SERVICE_LINE": true,
+        "TEMPLATE_ENABLE_SERVICE_PACKET": true
       }
     },
     {
@@ -195,7 +202,28 @@
         "TEMPLATE_ENABLE_DEVICE_IMU": true,
         "TEMPLATE_ENABLE_DEVICE_SERIAL": true,
         "TEMPLATE_ENABLE_DEVICE_LORA": true,
-        "TEMPLATE_ENABLE_DEVICE_FLASH": true
+        "TEMPLATE_ENABLE_DEVICE_FLASH": true,
+        "TEMPLATE_ENABLE_CORE_MESSAGE": true,
+        "TEMPLATE_ENABLE_SERVICE_LINE": true,
+        "TEMPLATE_ENABLE_SERVICE_PACKET": true
+      }
+    },
+    {
+      "name": "g3519-command-flow-debug",
+      "displayName": "MSPM0G3519 Command Flow - debug",
+      "inherits": "g3519-debug",
+      "binaryDir": "${sourceDir}/build/MSPM0G3519-CommandFlow/Debug",
+      "cacheVariables": {
+        "TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW": true
+      }
+    },
+    {
+      "name": "g3519-command-flow-release",
+      "displayName": "MSPM0G3519 Command Flow - release",
+      "inherits": "g3519-release",
+      "binaryDir": "${sourceDir}/build/MSPM0G3519-CommandFlow/Release",
+      "cacheVariables": {
+        "TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW": true
       }
     }
   ],
@@ -238,6 +266,16 @@
     {
       "name": "build-g3519-feature-smoke-release",
       "configurePreset": "g3519-feature-smoke-release",
+      "jobs": 8
+    },
+    {
+      "name": "build-g3519-command-flow-debug",
+      "configurePreset": "g3519-command-flow-debug",
+      "jobs": 8
+    },
+    {
+      "name": "build-g3519-command-flow-release",
+      "configurePreset": "g3519-command-flow-release",
       "jobs": 8
     }
   ]

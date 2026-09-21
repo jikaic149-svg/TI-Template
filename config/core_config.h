@@ -22,6 +22,18 @@
 /* Static memory: stack depth is measured in FreeRTOS StackType_t entries. */
 #define TEMPLATE_TASK_CONTROL_STACK_DEPTH 512U
 
+/* ==================== 可选命令链示例 ==================== */
+
+/* Logical Device bindings, not physical pins. G3519 transport 2 is the
+ * existing buffered radio serial port. Baud must match its BSP config. */
+#define TEMPLATE_EXAMPLE_COMMAND_SERIAL_INDEX 2U
+#define TEMPLATE_EXAMPLE_COMMAND_BAUD_RATE UINT32_C(115200)
+#define TEMPLATE_EXAMPLE_COMMAND_LED_INDEX 0U
+
+/* Bytes drained per 10 ms control cycle; positive and <= BSP RX capacity.
+ * Limits receive CPU work; excess input remains in the existing BSP buffer. */
+#define TEMPLATE_EXAMPLE_COMMAND_RX_BUDGET 64U
+
 /* ==================== 车辆控制 ==================== */
 
 /*

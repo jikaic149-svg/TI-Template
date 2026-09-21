@@ -21,9 +21,14 @@
 - `APP/System`：允许全局使用的硬件无关系统策略；不得直接访问寄存器。
 - `Mode`：单一业务/控制策略；不访问 BSP、Device、FreeRTOS 或 Task。
 - `Task`：周期、优先级、产品选择、Device/Mode 编排和运行期安全门。
+- `Core`：静态消息基础设施；执行环境依赖仅在 port，不能包含 Device/Mode/产品。
+- `Service`：协议解析与命令适配；校验按链路/语义选择，简单命令不默认附加 CRC。
+- `examples`：显式启用的应用连接示例；不得自动进入基础 preset。
 - `main.c`：初始化、创建 Task、启动调度器，不放产品业务。
 
-跨模块运行期数据优先走现有 Pub/Sub；初始化、模块私有实现和纯算法可直接调用。
+跨模块运行期数据使用 `Core/Message` Pub/Sub；初始化、模块私有实现和纯算法可直接调用。
+离散命令用 FIFO，最新目标与状态用 LATEST；每个订阅有独立副本，FULL 为整次发布失败。
+初版仅提供 Task 上下文 API，禁止在 ISR 中调用。具体契约见 `docs/FRAMEWORK_V1.md`。
 禁止用跨层 `extern` 或持续 Getter 轮询共享可变业务状态。
 
 ## 当前真值入口

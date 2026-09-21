@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDirectory,
-    [ValidateSet("All", "Watchdog", "Communication", "IMU", "Motor", "Navigation", "LineTracking")]
+    [ValidateSet("All", "Message", "Services", "CommandFlow", "Watchdog", "Communication", "IMU", "Motor", "Navigation", "LineTracking")]
     [string[]]$Scope = @("All")
 )
 
@@ -67,6 +67,43 @@ function Invoke-HostTest {
     if ($LASTEXITCODE -ne 0) {
         throw "$Name failed with exit code $LASTEXITCODE"
     }
+}
+
+if (Test-ScopeEnabled -Name "Message") {
+    Invoke-HostTest -Name "core_message" -Includes @(
+        "Core\Message"
+    ) -Sources @(
+        "Core\Message\core_message.c",
+        "tests\message\host_message_port.c",
+        "tests\message\test_core_message.c"
+    )
+}
+
+if (Test-ScopeEnabled -Name "Services") {
+    Invoke-HostTest -Name "services" -Includes @(
+        "Core\Message", "Service\Line", "Service\Packet",
+        "APP\Algorithm\Packet\include"
+    ) -Sources @(
+        "Core\Message\core_message.c", "tests\message\host_message_port.c",
+        "Service\Line\service_line.c", "Service\Packet\service_packet.c",
+        "APP\Algorithm\Packet\src\algorithm_packet.c",
+        "tests\services\test_services.c"
+    )
+}
+
+if (Test-ScopeEnabled -Name "CommandFlow") {
+    Invoke-HostTest -Name "command_flow" -Includes @(
+        "config", "BSP", "Core\Message", "Service\Line",
+        "Device\Actuator\LED", "Device\Communication\Serial",
+        "examples\command_flow"
+    ) -Sources @(
+        "Core\Message\core_message.c", "tests\message\host_message_port.c",
+        "Service\Line\service_line.c",
+        "Device\Actuator\LED\device_led.c",
+        "Device\Communication\Serial\device_serial.c",
+        "examples\command_flow\example_command_flow.c",
+        "tests\command_flow\test_command_flow.c"
+    )
 }
 
 if (Test-ScopeEnabled -Name "Watchdog") {

@@ -275,6 +275,9 @@ if ("/build/" -notin $gitIgnoreLines) {
 }
 
 $upperLayerRoots = @(
+    "Core",
+    "Service",
+    "examples",
     "APP",
     "BSP\include",
     "Device",

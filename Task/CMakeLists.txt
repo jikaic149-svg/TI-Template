@@ -12,3 +12,8 @@ target_link_libraries(task_app PUBLIC
 target_link_libraries(task_app PRIVATE
     app_system_watchdog
     device_watchdog)
+
+if(TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW)
+    target_compile_definitions(task_app PRIVATE TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW=1)
+    target_link_libraries(task_app PRIVATE example_command_flow)
+endif()

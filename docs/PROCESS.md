@@ -1,5 +1,37 @@
 # 工程变更记录
 
+## 2026-09-21：静态消息与分场景校验的框架初版
+
+- 修改原因：用户要求以自己的 TI-Template 为主框架，吸收 H7_BSP 的消息/基础设施
+  思路和 basic_framework 的命令/反馈组织方式，制作可用初版并提交回仓库。
+- 最终决策：新增 Core/Message 静态 Pub/Sub，离散命令 FIFO 与 LATEST 分开；每订阅
+  独立副本，任意 FIFO 满则整次发布返回 FULL，所有订阅保持原样。仅支持 Task 上下文，
+  用 FreeRTOS 短临界区保护复制，不增加堆、字符串注册表、回调派发或 ISR API。
+- 用户修正：简单消息按场景选择校验，否决“基础指示灯命令默认绑定 CRC 数据包”。
+  Service/Line 负责有界 ASCII 分帧，命令适配器检查名称与取值；Service/Packet 只作为
+  既有 CRC16 协议的可选适配。内部消息不额外做 CRC。
+- 应用与行为：新增独立 command-flow Debug/Release preset，通过现有 Serial 2 接受
+  LED 0/1，命令 FIFO 深度 2，每个原 Control 周期最多处理 64 个 RX 字节和 1 条命令。
+  Task 提交 LED 后发布状态，串口和观察者各有 LATEST 订阅。TX 满丢弃本条回复并返回
+  诊断位，不自动重试。原 Task 周期/栈/优先级、Watchdog 和 SysConfig 不变；基础 preset
+  不初始化/运行示例。没有新增业务状态机、保护机制或自动恢复。
+- 架构边界：APP/Algorithm、APP/System/Watchdog 保持现有职责；未重复创建 Health、
+  Time、Common。H7/basic 仅为设计参考，本次新增代码没有复制其源文件。
+- 涉及文件：Core、Service、examples/command_flow、Task 条件接入、CMake/presets、
+  核心示例参数、三组 host/ARM 测试、增量验证映射、架构说明与来源备注。
+- 验证方式和结果：tools/project.ps1 -Action Verify -Scope All -Clean 通过，12 个组件
+  全部完成验证；host 回归通过、ARM 严格编译通过，10 套 Debug/Release preset 完整链接
+  通过。示例真实接入控制 Task；feature-smoke 只证明其可选库可编译。新增 host 覆盖
+  9999 次消息模型操作、独立订阅、FIFO 满载原子性、行解析/重同步、可选 CRC 拒绝、
+  实际 Serial/LED Device 对接 host BSP，以及执行成功但反馈发送失败的情形。
+- 资源：G3519 示例 Debug text/data/bss 为 15352/5492/4036 B，Release 为
+  14440/5492/4036 B。基本 G3519 同构建分别为 12376/5404/3844 B 和
+  11904/5404/3836 B。示例使用既有 2048 B 静态 Task 栈，消息和缓冲全为静态。
+- 已知限制：未烧录、未上板；临界区最长耗时、WCET、调度抖动、栈高水位和串口/LED
+  实物行为未验证。简单格式检查不能检测全部合法值间的损坏，短命令不等于可忽略
+  执行后果。CRC、端到端 ACK、有效期等按产品需求另外选择。
+- 待确认事项：后续产品决定额外通信协议、硬件端口和可靠性需求；本初版无待定实现。
+
 ## 2026-07-28：修复增量验证并补齐可选组件覆盖
 
 - 修改原因：模板需要为 AI 辅助和日常开发提供可信且省时的验证入口；原增量缓存会因

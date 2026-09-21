@@ -2,6 +2,10 @@
 
 这是一个以 DriverLib 和 SysConfig 为底层、按 MCU 选择 BSP 的通用工程模板。
 
+框架初版新增静态 Pub/Sub、简单文本/可选 CRC 数据包服务，以及独立启用的串口 LED
+命令闭环。设计与校验分类见 [FRAMEWORK_V1](docs/FRAMEWORK_V1.md)，运行示例见
+[command_flow](examples/command_flow/README.md)。基础 preset 不自动启用示例。
+
 ## 默认行为
 
 - FreeRTOS V11.3.0 始终编译，并提供静态控制 Task 骨架。
@@ -20,6 +24,11 @@
 
 ```text
 TI Template/
+├─ Core/Message/              静态 FIFO、Latest Value 与 FreeRTOS port
+├─ Service/                   外部输入与内部消息适配
+│  ├─ Line/                   简单文本行，格式/范围校验，不强制 CRC
+│  └─ Packet/                 复用既有 CRC16 协议的可选服务
+├─ examples/command_flow/     串口 → 命令 → Task → LED → 独立反馈
 ├─ APP/                       与硬件无关的算法组件
 │  ├─ Algorithm/              数学、控制和协议算法
 │  └─ System/Watchdog/        MCU 无关的全局健康判定
@@ -99,7 +108,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\mspm0.ps1 `
   -Action Build -Device MSPM0G3519 -Configuration Debug -MotorDriver AT8236
 ```
 
-八套 preset：
+十套 preset：
 
 ```text
 g3507-debug
@@ -110,10 +119,12 @@ g3519-at8236-debug
 g3519-at8236-release
 g3519-feature-smoke-debug
 g3519-feature-smoke-release
+g3519-command-flow-debug
+g3519-command-flow-release
 ```
 
 `feature-smoke` 只用于验证：它在 G3519 上同时交叉编译当前所有可选 Algorithm、Device
-和 Mode，并完成模板基础固件链接。模板没有产品 Task 去引用这些可选静态库，因此该
+和 Mode，以及 Core/Service，并完成模板基础固件链接。模板没有产品 Task 去引用这些可选静态库，因此该
 结果证明组件能够进入 ARM 构建，不代表它们已经集成到某个产品固件或经过实物验证。
 
 Debug 使用 `-Og -g3`，适合断点和变量观察；Release 使用 `-Os`，
@@ -175,6 +186,11 @@ Algorithm 与 Device 默认关闭，只有显式打开对应选项时才进入�
 具体 ICM-45686 或 BMI088 会带入统一 Device_IMU 与 Mahony，两颗同时启用会额外
 带入 IMUFusion；Vision 带入 ReliableLink/Packet，LoRa 带入 Device_Serial，Car Mode
 带入 PID；不会把整个 Algorithm 或 Device 目录全部编译。
+
+新增选项 `TEMPLATE_ENABLE_CORE_MESSAGE`、`TEMPLATE_ENABLE_SERVICE_LINE`、
+`TEMPLATE_ENABLE_SERVICE_PACKET`、`TEMPLATE_ENABLE_EXAMPLE_COMMAND_FLOW` 默认 OFF。
+command-flow 自动带入 Core/Message、Service/Line、Device_LED 和 Device_Serial；
+不依赖 CRC 或 Packet。Packet 服务单独启用时带入 Algorithm/Packet 与 Core/Message。
 
 各模块保留 host 测试源码和 ARM 编译脚本；当前电脑已经可以直接编译并运行
 host 测试，同时继续用 Cortex-M0+ 严格编译检查目标端兼容性，不需要关闭或绕过
